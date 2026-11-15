@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m unittest:*)",
+      "Bash(python -m compileall:*)",
+      "Bash(python hwviewer.py --mock:*)",
+      "Bash(python hwviewer.py --dump:*)",
+      "Bash(python hwinfo_watchdog.py --status:*)",
+      "PowerShell(python -m unittest:*)",
+      "PowerShell(python -m compileall:*)",
+      "PowerShell(python hwviewer.py --mock:*)",
+      "PowerShell(python hwviewer.py --dump:*)",
+      "PowerShell(python hwinfo_watchdog.py --status:*)",
+      "PowerShell(python -c \"import hwv.desktop, hwv.watchdog; print\\('imports ok'\\)\")",
+      "PowerShell(python hwviewer.py --help)",
+      "PowerShell(try { \\(Get-Command gh -ErrorAction Stop\\).Source; gh --version } catch { \"gh not found\" }; try { \\(Get-Command winget -ErrorAction Stop\\).Source } catch { \"winget not found\" })"
+    ],
+    "ask": [
+      "Bash(python hwinfo_watchdog.py --restart-now:*)",
+      "Bash(python hwinfo_watchdog.py --install:*)",
+      "Bash(python hwinfo_watchdog.py --uninstall:*)",
+      "Bash(taskkill:*)",
+      "PowerShell(python hwinfo_watchdog.py --restart-now:*)",
+      "PowerShell(python hwinfo_watchdog.py --install:*)",
+      "PowerShell(python hwinfo_watchdog.py --uninstall:*)",
+      "PowerShell(taskkill:*)",
+      "PowerShell(Stop-Process:*)"
+    ]
+  }
+}

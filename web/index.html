@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sensors</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #14161a; --panel: #1b1e24; --panel2: #20242b; --line: #2a2e36; --text: #e6e8ec; --dim: #8a909c;
+    --accent: #ff7a1a; --warn: #f5b335; --crit: #ff5252; --hover: rgba(255,122,26,.14);
+    --font: "Segoe UI", system-ui, sans-serif; --fs: 14px; --pad: 3px; --rad: 8px; --bold: 600; --upper: uppercase;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs)/1.35 var(--font); }
+  button, input, select { font: inherit; color: inherit; }
+  #wrap { position: relative; min-height: 100vh; padding: 0 12px 14px; margin: 0 auto; }
+  #top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: 10px; }
+  nav { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; font-size: 12px; }
+  nav a { color: var(--dim); text-decoration: none; padding: 3px 10px; border-radius: 5px; }
+  nav a.on { background: var(--panel); color: var(--text); box-shadow: inset 0 -2px var(--accent); }
+  nav .grow { flex: 1; align-self: stretch; min-height: 20px; }
+  nav .ttl { color: var(--text); font-weight: 600; padding: 3px 6px; }
+  .ib { background: none; border: 0; color: var(--dim); cursor: pointer; padding: 2px 7px; border-radius: 5px; font-size: 14px; }
+  .ib:hover, .ib.on { background: var(--panel); color: var(--text); }
+  #stamp { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #stamp.warn { color: var(--warn); }
+  #banner { display: none; background: #3a1b1b; border: 1px solid #6a2a2a; color: #ffb4b4;
+    padding: 8px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+
+  /* settings panel */
+  #panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); margin-bottom: 8px; display: none;
+    font-size: 12px; max-height: 62vh; overflow: auto; }
+  #panel.open { display: block; }
+  #panel details { border-bottom: 1px solid var(--line); padding: 2px 10px; }
+  #panel details:last-child { border-bottom: 0; }
+  #panel summary { cursor: pointer; padding: 5px 0; color: var(--accent); font-weight: 600; letter-spacing: .04em; }
+  #panel .r { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 3px 0; }
+  #panel .r > b, #insp .r > b { color: var(--dim); font-weight: 500; min-width: 70px; }
+  #panel label, #insp label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 2px 10px; cursor: pointer; color: var(--dim); }
+  .seg button.on { background: var(--accent); color: #111; }
+  .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.on { background: var(--accent); color: #111; border-color: var(--accent); }
+  .btn.danger:hover { border-color: var(--crit); color: var(--crit); }
+  input[type=number], input[type=text], select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  input[type=number] { width: 72px; }
+  input[type=range] { accent-color: var(--accent); width: 120px; }
+  input[type=color] { width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; border-radius: 4px; }
+  .hint { color: var(--dim); font-size: 11px; }
+
+  /* tables */
+  #colhead table { margin-bottom: 4px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); margin-bottom: 10px; overflow: hidden; }
+  section h2 { margin: 0; padding: 5px 10px; font-size: .8em; letter-spacing: .09em; text-transform: var(--upper);
+    color: var(--accent); background: var(--panel2); cursor: pointer; user-select: none; display: flex; gap: 6px; align-items: center; }
+  section h2::before { content: "\25BE"; color: var(--dim); }
+  section.collapsed h2::before { content: "\25B8"; }
+  section.collapsed table { display: none; }
+  section.dragover h2 { box-shadow: inset 0 -2px var(--accent); }
+  h2 .miss { margin-left: auto; color: var(--warn); font-size: .9em; letter-spacing: 0; text-transform: none; cursor: help; }
+  h2 .acts { margin-left: auto; display: inline-flex; gap: 2px; }
+  h2 .miss + .acts { margin-left: 8px; }
+  h2 .acts button { background: none; border: 0; color: var(--dim); cursor: pointer; padding: 0 5px; border-radius: 4px; font-size: 1em; }
+  h2 .acts button:hover { color: var(--text); background: var(--bg); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  col.v { width: 6.9em; }
+  th { text-align: right; font-weight: 500; font-size: .8em; color: var(--dim); padding: 2px 10px; }
+  td { padding: var(--pad) 10px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  body.dense td { padding: calc(var(--pad) - 1px) 8px; }
+  td:first-child { text-align: left; white-space: normal; }
+  tr + tr td { border-top: 1px solid var(--line); }
+  tbody tr:hover td { background: var(--hover); }
+  td.cur { font-weight: var(--bold); }
+  td.dim { color: var(--dim); }
+  tr.warn td.cur { color: var(--warn); }
+  tr.crit td.cur { color: var(--crit); }
+  tr.missing td { opacity: .45; }
+  tr.group td:first-child { cursor: pointer; }
+  tr.group td:first-child::before { content: "\25B8"; color: var(--dim); margin-right: 5px; display: inline-block; }
+  tr.group.open td:first-child::before { content: "\25BE"; }
+  tr.member td { background: rgba(0,0,0,.18); color: var(--dim); }
+  tr.member td:first-child { padding-left: 28px; }
+  .tag { color: var(--dim); font-weight: 400; font-size: .8em; margin-left: 6px; }
+  .stale td.cur { opacity: .45; }
+  .nm { display: flex; align-items: center; gap: 6px; }
+  .nm .t { flex: 1; }
+  .grip { cursor: grab; color: var(--dim); letter-spacing: -2px; }
+  .rm { background: none; border: 0; color: var(--dim); cursor: pointer; padding: 0 5px; border-radius: 4px; }
+  .rm:hover { color: var(--crit); background: var(--bg); }
+  tr.dragging { opacity: .35; }
+  tr.dropbefore td { box-shadow: inset 0 2px var(--accent); }
+  .editbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding: 6px 10px; border: 1px dashed var(--accent); border-radius: var(--rad); font-size: 12px; }
+  .editbar .grow { flex: 1; }
+  /* width handles */
+  .rz { position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize; z-index: 6; }
+  .rz.l { left: 0; } .rz.r { right: 0; }
+  .rz::after { content: ""; position: absolute; top: 50%; left: 3px; width: 3px; height: 38px; margin-top: -19px;
+    border-radius: 3px; background: var(--accent); opacity: 0; transition: opacity .15s; }
+  .rz:hover::after, .rz.drag::after { opacity: .8; }
+  body.nobar .rz { display: none; }
+
+  /* modal */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50; display: none; place-items: center; }
+  #modal.open { display: grid; }
+  .mbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 12px 14px; width: min(560px, 94vw); font-size: 12px; }
+  .mbox h3 { margin: 0 0 8px; color: var(--accent); font-size: 1.05em; }
+  .mbox select[size] { width: 100%; margin: 6px 0; }
+  .mbox .r { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 3px 0; }
+  .mbox input[type=text] { flex: 1; min-width: 120px; }
+
+  /* builder */
+  #bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+  #bar .grow { flex: 1; }
+  #canvas { position: relative; container-type: inline-size; border-radius: var(--rad); overflow: hidden; background: #0e1013;
+    border: 1px solid var(--line); min-height: 220px; user-select: none; touch-action: none; }
+  #canvas img { display: block; width: 100%; pointer-events: none; }
+  #canvas .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); text-align: center; padding: 20px; }
+  .box { position: absolute; padding: .25em .6em; border-radius: .5em; white-space: nowrap; line-height: 1.25;
+    font-size: calc(var(--bfs) * 1cqw); text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  .editing .box { cursor: move; outline: 1px dashed rgba(255,255,255,.35); }
+  .editing .box.sel { outline: 2px solid var(--accent); }
+  .box .bn { opacity: .85; margin-right: .5em; }
+  .box .bv { margin-right: .5em; }
+  .box .bv.cur { font-weight: 700; }
+  .box .bv:not(.cur) { opacity: .75; font-size: .82em; }
+  .box .bv.warn { color: var(--warn); } .box .bv.crit { color: var(--crit); }
+  #insp { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 8px 10px; margin-top: 8px; font-size: 12px; }
+  #insp .r { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 3px 0; }
+  #insp select { max-width: 100%; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="top">
+    <nav id="nav" class="pywebview-drag-region"></nav>
+    <div id="panel"></div>
+    <div id="banner"></div>
+    <div id="editbar"></div>
+    <div id="colhead"></div>
+  </div>
+  <main id="main"></main>
+  <div class="rz l" data-side="l"></div><div class="rz r" data-side="r"></div>
+</div>
+<div id="modal"><div class="mbox" id="mbox"></div></div>
+<datalist id="fonts"><option>Segoe UI</option><option>Cascadia Mono</option><option>Consolas</option><option>Arial</option><option>Tahoma</option>
+  <option>Verdana</option><option>Calibri</option><option>Trebuchet MS</option><option>Courier New</option><option>Inter</option><option>Roboto</option></datalist>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const COLS = { cur: "Current", min: "Min", max: "Max", avg: "Avg" };
+const COL_ORDER = ["cur", "min", "max", "avg"];
+const DEC = { "°C": 1, "V": 3, "A": 2, "W": 1, "RPM": 0, "MHz": 0, "%": 1 };
+const PRESETS = {
+  Dark: { bg: "#14161a", panel: "#1b1e24", panel2: "#20242b", line: "#2a2e36", text: "#e6e8ec", dim: "#8a909c", accent: "#ff7a1a", warn: "#f5b335", crit: "#ff5252" },
+  Midnight: { bg: "#0b1020", panel: "#121a31", panel2: "#18223f", line: "#26335a", text: "#dfe8ff", dim: "#8294c4", accent: "#5aa2ff", warn: "#ffc857", crit: "#ff6b81" },
+  Light: { bg: "#f2f3f5", panel: "#ffffff", panel2: "#eceef2", line: "#d9dce3", text: "#1b1e24", dim: "#6b7280", accent: "#d9570a", warn: "#b7791f", crit: "#d63b3b" },
+  Contrast: { bg: "#000000", panel: "#0a0a0a", panel2: "#141414", line: "#3a3a3a", text: "#ffffff", dim: "#b0b0b0", accent: "#00e5ff", warn: "#ffd400", crit: "#ff3b3b" },
+  "Orange glow": { bg: "#0f0b08", panel: "#1a120c", panel2: "#251810", line: "#3a2415", text: "#ffe9d6", dim: "#b08a6b", accent: "#ff8a1f", warn: "#ffc24d", crit: "#ff4d4d" },
+};
+const SOLO = (() => { const s = new URLSearchParams(location.search).get("solo"); if (!s) return null; const i = s.indexOf("/"); return i < 0 ? { view: s, section: null, key: s } : { view: s.slice(0, i), section: s.slice(i + 1), key: s }; })();  // URLSearchParams already decoded it
+
+let data = null, prefs = { ui: {}, theme: {} }, view = SOLO ? SOLO.view : "full", lastOk = false, panelOpen = false, env = null;
+let editing = false, seenRev = -1, layouts = { names: [], active: null }, armedDelete = false, readings = [];
+const openRows = new Set(), openGroups = new Set(["View"]);
+
+/* ---------- helpers ---------- */
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "X-HWV": "1", "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json(); if (j && j.rev != null) seenRev = j.rev; return j;
+}
+function fmt(v, unit) {
+  if (v == null || !isFinite(v)) return "—";
+  const d = unit in DEC ? DEC[unit] : 1;
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + (unit ? " " + unit : "");
+}
+let saveTimer = null, pending = null, inflight = 0;
+function mergeInto(d, s) { for (const k in s) { if (s[k] && typeof s[k] === "object" && !Array.isArray(s[k])) mergeInto(d[k] = d[k] || {}, s[k]); else d[k] = s[k]; } return d; }
+function savePrefs(patch) {              // apply locally now; batch every change made in the last 150 ms into one POST
+  mergeInto(prefs, patch); pending = mergeInto(pending || {}, patch);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => { const p = pending; pending = null; saveTimer = null; inflight++; try { await post("/api/settings", p); } finally { inflight--; } }, 150);
+}
+const hexA = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+const viewDef = () => (data && data.views || []).find(v => v.id === view);
+function vp(v) {
+  const u = (prefs.ui || {})[v.id] || {};
+  return { width: u.width != null ? u.width : (v.width || 0), align: u.align || v.align || "center", collapsed: u.collapsed || [],
+           columns: u.columns || v.columns, sort: u.sort || "custom", fontSize: u.fontSize || 0 };
+}
+
+/* ---------- theme ---------- */
+function applyTheme() {
+  const t = prefs.theme || {}, c = Object.assign({}, PRESETS[t.preset] || PRESETS.Dark);
+  for (const k of ["bg", "panel", "text", "accent", "warn", "crit"]) if (t[k]) c[k] = t[k];
+  const r = document.documentElement.style;
+  for (const k in c) r.setProperty("--" + k, c[k]);
+  r.setProperty("--hover", hexA(c.accent, .14));
+  r.setProperty("--font", (t.font ? `"${t.font}", ` : "") + '"Segoe UI", system-ui, sans-serif');
+  r.setProperty("--fs", (t.size || 14) + "px");
+  r.setProperty("--pad", (t.pad != null ? t.pad : 3) + "px");
+  r.setProperty("--rad", (t.radius != null ? t.radius : 8) + "px");
+  r.setProperty("--bold", t.bold === false ? 400 : 600);
+  r.setProperty("--upper", t.upper === false ? "none" : "uppercase");
+}
+
+/* ---------- nav ---------- */
+function detach(v, section) {
+  if (env) window.pywebview.api.detach(v, section || "");
+  else window.open("/?solo=" + v + (section ? "/" + encodeURIComponent(section) : ""), "_blank", "popup,width=540,height=720");
+}
+function renderNav() {
+  const frameless = env && env.window && env.window.frameless;
+  if (SOLO) {
+    $("#nav").innerHTML = `<span class="ttl">${esc(SOLO.section ? SOLO.section : ((data && (data.views.find(v => v.id === SOLO.view) || {}).title) || (SOLO.view === "builder" ? "Builder" : SOLO.view)))}</span>` +
+      `<span class="grow"></span><span id="stamp"></span><button class="ib" id="closeBtn" title="Close this window">✕</button>`;
+    $("#closeBtn").onclick = () => env ? window.pywebview.api.close_detached(SOLO.key) : window.close();
+    return;
+  }
+  const tabs = (data && data.views ? data.views.map(v => [v.id, v.title]) : [["full", "Full"], ["compact", "Compact"]]).concat([["builder", "Builder"]]);
+  $("#nav").innerHTML = tabs.map(([id, t]) => `<a href="#${id}" class="${id === view ? "on" : ""}">${esc(t)}</a>`).join("") +
+    `<span class="grow"></span><span id="stamp"></span>` +
+    `<button class="ib" id="detBtn" title="Open this view in its own window">⧉</button>` +
+    `<button class="ib ${panelOpen ? "on" : ""}" id="gear" title="Settings">⚙</button>` +
+    (frameless ? `<button class="ib" id="hideBtn" title="Hide to tray">✕</button>` : "");
+  $("#gear").onclick = () => { panelOpen = !panelOpen; renderNav(); renderPanel(); };
+  $("#detBtn").onclick = () => detach(view);
+  if ($("#hideBtn")) $("#hideBtn").onclick = () => window.pywebview.api.hide();
+}
+
+/* ---------- settings panel ---------- */
+const seg = (name, opts, cur) => `<span class="seg" data-seg="${name}">${opts.map(([v, t]) => `<button data-v="${v}" class="${v == cur ? "on" : ""}">${t}</button>`).join("")}</span>`;
+const chk = (id, label, on) => `<label><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${label}</label>`;
+function group(name, body) { return `<details data-g="${name}" ${openGroups.has(name) ? "open" : ""}><summary>${name}</summary>${body}</details>`; }
+
+function renderPanel() {
+  const p = $("#panel");
+  p.classList.toggle("open", panelOpen && !SOLO);
+  if (!panelOpen || SOLO) return;
+  const v = viewDef(), t = prefs.theme || {}, base = PRESETS[t.preset] || PRESETS.Dark, W = (env && env.window) || {};
+  let h = "";
+  if (v) {
+    const s = vp(v);
+    h += group("View", `
+      <div class="r"><b>Align</b>${seg("align", [["left", "Left"], ["center", "Center"], ["right", "Right"]], s.align)}
+        <label>Width <input type="number" id="pw" min="260" step="10" value="${s.width || ""}" placeholder="fit"> px</label>
+        <button class="btn" id="pfit">Fit window</button></div>
+      <div class="r"><b>Columns</b>${COL_ORDER.map(c => `<label><input type="checkbox" data-col="${c}" ${s.columns.includes(c) ? "checked" : ""}> ${COLS[c]}</label>`).join("")}</div>
+      <div class="r"><b>Order</b>${seg("sort", [["custom", "Custom"], ["hot", "Hottest first"], ["cold", "Coolest first"]], s.sort)}
+        <span class="hint">Auto orders temperatures per section; other values keep their place, RPM goes last.</span></div>
+      <div class="r"><b>Font size</b><input type="range" id="pvfs" min="10" max="26" step="1" value="${s.fontSize || (t.size || 14)}">
+        <span id="pvfsv">${s.fontSize || (t.size || 14)}px</span><button class="btn" id="pvfsr">Use global</button></div>
+      <div class="r"><b>Sections</b><button class="btn" id="pcol">Collapse all</button><button class="btn" id="pexp">Expand all</button>
+        ${chk("punm", "Show unmatched rows", prefs.show_unmatched)}</div>
+      <div class="r hint">Drag the left/right edge of the content to resize it. Click a section title to collapse it.</div>`);
+    const act = layouts.active;
+    h += group("Sensors", `
+      <div class="r"><b>Profile</b><select id="play"><option value="">Default (original)</option>${layouts.names.map(n => `<option ${n === act ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+        <button class="btn ${editing ? "on" : ""}" id="pedit">${editing ? "Done editing" : "Edit sensors"}</button>
+        ${act ? `<button class="btn" id="pdef">Return to default</button><button class="btn danger" id="pdelL">${armedDelete ? "Sure?" : "Delete profile"}</button>` : ""}</div>
+      <div class="r"><b>Save as</b><input type="text" id="pln" placeholder="new profile name" size="18"><button class="btn" id="plsave">Save</button></div>
+      <div class="r hint">Editing while on Default creates a profile called "Custom" - Default (your original sensors) is never changed.
+        In edit mode drag rows to reorder, ✕ removes, ＋ adds a sensor to a section.</div>`);
+  }
+  h += group("Look", `
+    <div class="r"><b>Preset</b><select id="tpre">${Object.keys(PRESETS).map(n => `<option ${n === (t.preset || "Dark") ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <button class="btn" id="treset">Reset look</button></div>
+    <div class="r"><b>Font</b><input type="text" id="tfont" list="fonts" placeholder="Segoe UI" value="${esc(t.font || "")}" size="16">
+      <label>Size <input type="range" id="tsize" min="10" max="26" value="${t.size || 14}"> <span id="tsizev">${t.size || 14}px</span></label></div>
+    <div class="r"><b>Colors</b>${[["accent", "Accent"], ["bg", "Background"], ["panel", "Panels"], ["text", "Text"], ["warn", "Warn"], ["crit", "Critical"]]
+      .map(([k, n]) => `<label>${n} <input type="color" data-c="${k}" value="${t[k] || base[k]}"></label>`).join("")}</div>
+    <div class="r"><b>Shape</b><label>Row padding <input type="range" id="tpad" min="0" max="10" value="${t.pad != null ? t.pad : 3}"></label>
+      <label>Corners <input type="range" id="trad" min="0" max="18" value="${t.radius != null ? t.radius : 8}"></label>
+      ${chk("tbold", "Bold values", t.bold !== false)}${chk("tupper", "UPPERCASE section titles", t.upper !== false)}</div>`);
+  if (env) {
+    h += group("Window", `
+      <div class="r"><b>Frame</b>${chk("wfl", "Hide title bar (restarts)", W.frameless)}${chk("wtop", "Always on top", W.on_top)}${chk("wpin", "Pin to desktop (behind other windows)", W.pinned)}</div>
+      <div class="r"><b>Behavior</b>${chk("wtray", "Close button minimizes to tray", W.close_to_tray !== false)}${chk("whid", "Start hidden in tray", W.start_hidden)}
+        ${chk("wct", "Click-through (undo from tray menu)", W.click_through)}</div>
+      <div class="r"><b>Opacity</b><input type="range" id="wop" min="20" max="100" value="${Math.round((W.opacity != null ? W.opacity : 1) * 100)}"><span id="wopv">${Math.round((W.opacity != null ? W.opacity : 1) * 100)}%</span></div>
+      <div class="r"><b>Size</b><input type="number" id="ww" value="${innerWidth}"> × <input type="number" id="wh" value="${innerHeight}"><button class="btn" id="wsz">Apply</button>
+        <button class="btn danger" id="wquit">Quit</button></div>`);
+  }
+  p.innerHTML = h;
+  const q = (s) => p.querySelector(s), qa = s => p.querySelectorAll(s);
+  qa("details > summary").forEach(sm => sm.addEventListener("click", () => { const d = sm.parentElement; d.open ? openGroups.delete(d.dataset.g) : openGroups.add(d.dataset.g); }));
+  // view
+  qa('[data-seg="align"] button').forEach(b => b.onclick = () => setView({ align: b.dataset.v }));
+  qa('[data-seg="sort"] button').forEach(b => b.onclick = () => setView({ sort: b.dataset.v }));
+  qa("[data-col]").forEach(cb => cb.onchange = () => { const cols = COL_ORDER.filter(c => q(`[data-col="${c}"]`).checked); if (cols.length) setView({ columns: cols }); });
+  if (q("#pw")) q("#pw").onchange = e => setView({ width: Math.max(260, +e.target.value || 0) || 0 });
+  if (q("#pfit")) q("#pfit").onclick = () => setView({ width: 0 });
+  if (q("#pcol")) q("#pcol").onclick = () => setView({ collapsed: viewDef().sections.map(s => s.title) });
+  if (q("#pexp")) q("#pexp").onclick = () => setView({ collapsed: [] });
+  if (q("#punm")) q("#punm").onchange = e => { savePrefs({ show_unmatched: e.target.checked }); renderTable(); };
+  if (q("#pvfs")) q("#pvfs").oninput = e => { q("#pvfsv").textContent = e.target.value + "px"; savePrefs({ ui: { [view]: { fontSize: +e.target.value } } }); renderTable(); };
+  if (q("#pvfsr")) q("#pvfsr").onclick = () => { savePrefs({ ui: { [view]: { fontSize: 0 } } }); renderTable(); renderPanel(); };
+  // sensors / profiles
+  if (q("#play")) q("#play").onchange = async e => { await post("/api/layout/select", { name: e.target.value || null }); await refreshLayouts(); await tick(true); renderPanel(); };
+  if (q("#pdef")) q("#pdef").onclick = async () => { await post("/api/layout/select", { name: null }); await refreshLayouts(); await tick(true); renderPanel(); };
+  if (q("#pedit")) q("#pedit").onclick = () => { editing = !editing; renderTable(); renderEditBar(); renderPanel(); };
+  if (q("#plsave")) q("#plsave").onclick = async () => { const n = q("#pln").value.trim(); if (!n) return q("#pln").focus(); await post("/api/layout/save_as", { name: n }); await refreshLayouts(); await tick(true); renderPanel(); };
+  if (q("#pdelL")) q("#pdelL").onclick = async () => {
+    if (!armedDelete) { armedDelete = true; renderPanel(); setTimeout(() => { armedDelete = false; renderPanel(); }, 3000); return; }
+    armedDelete = false; await post("/api/layout/delete", { name: layouts.active }); await refreshLayouts(); await tick(true); renderPanel();
+  };
+  // look
+  q("#tpre").onchange = e => { prefs.theme = { preset: e.target.value, font: t.font, size: t.size, pad: t.pad, radius: t.radius, bold: t.bold, upper: t.upper };
+    post("/api/settings", { theme: { preset: e.target.value } }).then(() => post("/api/settings", { theme: { bg: null, panel: null, text: null, accent: null, warn: null, crit: null } })); applyTheme(); renderPanel(); };
+  q("#treset").onclick = async () => { await post("/api/settings/reset_key", { key: "theme" }); prefs.theme = {}; applyTheme(); renderTable(); renderPanel(); };
+  q("#tfont").onchange = e => { savePrefs({ theme: { font: e.target.value.trim() } }); applyTheme(); };
+  q("#tsize").oninput = e => { q("#tsizev").textContent = e.target.value + "px"; savePrefs({ theme: { size: +e.target.value } }); applyTheme(); };
+  qa("[data-c]").forEach(i => i.oninput = () => { savePrefs({ theme: { [i.dataset.c]: i.value } }); applyTheme(); });
+  q("#tpad").oninput = e => { savePrefs({ theme: { pad: +e.target.value } }); applyTheme(); };
+  q("#trad").oninput = e => { savePrefs({ theme: { radius: +e.target.value } }); applyTheme(); };
+  q("#tbold").onchange = e => { savePrefs({ theme: { bold: e.target.checked } }); applyTheme(); };
+  q("#tupper").onchange = e => { savePrefs({ theme: { upper: e.target.checked } }); applyTheme(); };
+  // window (widget only)
+  if (env) {
+    const sw = (id, key) => { if (q(id)) q(id).onchange = async e => { env.window = await window.pywebview.api.set_window({ [key]: e.target.checked }); renderPanel(); }; };
+    sw("#wfl", "frameless"); sw("#wtop", "on_top"); sw("#wpin", "pinned"); sw("#wtray", "close_to_tray"); sw("#whid", "start_hidden"); sw("#wct", "click_through");
+    q("#wop").oninput = e => { q("#wopv").textContent = e.target.value + "%"; window.pywebview.api.set_window({ opacity: e.target.value / 100 }); };
+    q("#wsz").onclick = () => window.pywebview.api.resize(+q("#ww").value, +q("#wh").value);
+    q("#wquit").onclick = () => window.pywebview.api.quit();
+  }
+}
+function setView(patch) { savePrefs({ ui: { [view]: patch } }); renderTable(); renderPanel(); }
+async function refreshLayouts() { try { layouts = await (await fetch("/api/layouts")).json(); } catch (e) {} }
+
+/* ---------- table views ---------- */
+function applyWidth(v) {
+  const w = $("#wrap"), s = v && !SOLO ? vp(v) : { width: 0, align: "center" };
+  w.style.maxWidth = s.width ? s.width + "px" : "none";
+  w.style.marginLeft = s.align === "left" ? "0" : "auto";
+  w.style.marginRight = s.align === "right" ? "0" : "auto";
+  document.body.classList.toggle("nobar", view === "builder" || !!SOLO);
+}
+const rank = r => r.unit === "°C" ? 0 : r.unit === "RPM" ? 2 : 1;
+function sortRows(rows, mode) {
+  if (mode === "custom" || editing) return rows;
+  const dir = mode === "hot" ? -1 : 1;
+  return rows.map((r, i) => [r, i]).sort((a, b) => {
+    const x = a[0], y = b[0], d = rank(x) - rank(y);
+    if (d) return d;
+    if (rank(x) === 0) return (x.found === y.found ? dir * ((x.cur || 0) - (y.cur || 0)) : (x.found ? -1 : 1)) || a[1] - b[1];
+    return a[1] - b[1];
+  }).map(p => p[0]);
+}
+const itemKey = r => r.id.split(":")[0];
+
+function renderEditBar() {
+  const el = $("#editbar");
+  if (!editing || view === "builder") { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="editbar"><b>Editing sensors</b><span class="hint">drag rows to reorder · ✕ removes · ＋ adds</span><span class="grow"></span>
+    <button class="btn" id="ebNew">＋ New section</button><button class="btn on" id="ebDone">Done</button></div>`;
+  $("#ebDone").onclick = () => { editing = false; renderEditBar(); renderTable(); renderPanel(); };
+  $("#ebNew").onclick = () => openModal(null);
+}
+function renderTable() {
+  const v = viewDef();
+  if (view === "builder" || !v) return;
+  applyWidth(v);
+  const s = vp(v), cols = COL_ORDER.filter(c => s.columns.includes(c));
+  document.body.classList.toggle("dense", v.density === "compact");
+  const fs = s.fontSize ? s.fontSize + "px" : "";
+  $("#main").style.fontSize = fs; $("#colhead").style.fontSize = fs;
+  const cg = `<colgroup><col>${cols.map(() => '<col class="v">').join("")}</colgroup>`;
+  $("#colhead").innerHTML = `<table>${cg}<tr><th></th>${cols.map(c => `<th>${COLS[c]}</th>`).join("")}</tr></table>`;
+  const vals = [];
+  const cell = (c, x, unit) => `<td class="${c === "cur" ? "cur" : "dim"}" data-i="${vals.push(fmt(x, unit)) - 1}"></td>`;
+  let html = "";
+  for (const sec of v.sections) {
+    if (SOLO && SOLO.section && sec.title !== SOLO.section) continue;
+    const collapsed = !SOLO && s.collapsed.includes(sec.title);
+    const rows = sortRows(sec.rows.filter(r => r.found || prefs.show_unmatched || editing), s.sort);
+    const miss = sec.missing.length && !editing
+      ? `<span class="miss" title="Not matched in HWiNFO: ${esc(sec.missing.join(", "))}">⚠ ${sec.missing.length} unmatched</span>` : "";
+    const acts = editing ? `<span class="acts"><button data-act="add" title="Add a sensor here">＋</button>${sec.items.length ? "" : '<button data-act="rmsec" title="Remove empty section">✕</button>'}</span>`
+      : (SOLO ? "" : `<span class="acts"><button data-act="detach" title="Open this section in its own window">⧉</button></span>`);
+    html += `<section class="${collapsed ? "collapsed" : ""} ${lastOk ? "" : "stale"}" data-title="${esc(sec.title)}"><h2 data-sec="${esc(sec.title)}">${esc(sec.title)}${miss}${acts}</h2><table>${cg}<tbody>`;
+    for (const r of rows) {
+      const key = v.id + "/" + r.id, kids = r.children;
+      const cls = [r.state, r.found ? "" : "missing", kids && !editing ? "group" : "", kids && !editing && openRows.has(key) ? "open" : ""].join(" ");
+      const tag = r.hottest ? `<span class="tag">${esc(r.hottest)}</span>` : "";
+      const name = editing
+        ? `<div class="nm"><span class="grip">⋮⋮</span><span class="t">${esc(r.name)}</span><button class="rm" data-act="rm" title="Remove">✕</button></div>`
+        : esc(r.name) + tag;
+      html += `<tr class="${cls}" ${kids && !editing ? `data-key="${esc(key)}"` : ""} ${editing ? `draggable="true" data-item="${esc(itemKey(r))}"` : ""}><td>${name}</td>` +
+        cols.map(c => cell(c, r[c], r.unit)).join("") + "</tr>";
+      if (kids && openRows.has(key) && !editing)
+        for (const m of kids) html += `<tr class="member"><td>${esc(m.name)}</td>${cols.map(c => cell(c, m[c], m.unit)).join("")}</tr>`;
+    }
+    html += "</tbody></table></section>";
+  }
+  const main = $("#main");
+  if (main.dataset.sig !== html) { main.innerHTML = html; main.dataset.sig = html; }
+  main.querySelectorAll("td[data-i]").forEach(td => { const t = vals[td.dataset.i]; if (td.textContent !== t) td.textContent = t; });
+  document.title = v.title + " – Sensors";
+}
+
+/* edit operations: always send the full section/items arrangement for this view */
+const curSections = () => viewDef().sections.map(s => ({ title: s.title, items: s.items.map(i => i.key) }));
+async function commit(sections, add) {
+  const r = await post("/api/layout/edit", { view, sections, add: add || {} });
+  if (r.error) { alert(r.error); return; }
+  await refreshLayouts(); await tick(true); renderPanel();
+}
+$("#main").addEventListener("click", e => {
+  const a = e.target.closest("[data-act]");
+  if (a) {
+    e.stopPropagation();
+    const sec = a.closest("section"), title = sec && sec.dataset.title;
+    if (a.dataset.act === "detach") return detach(view, title);
+    if (a.dataset.act === "add") return openModal(title);
+    if (a.dataset.act === "rmsec") return commit(curSections().filter(s => s.title !== title));
+    if (a.dataset.act === "rm") { const k = a.closest("tr").dataset.item; return commit(curSections().map(s => ({ title: s.title, items: s.items.filter(x => x !== k) }))); }
+  }
+  const h = e.target.closest("h2[data-sec]");
+  if (h && !SOLO) { const s = vp(viewDef()), t = h.dataset.sec; setView({ collapsed: s.collapsed.includes(t) ? s.collapsed.filter(x => x !== t) : s.collapsed.concat(t) }); return; }
+  const tr = e.target.closest("tr.group");
+  if (tr) { const k = tr.dataset.key; openRows.has(k) ? openRows.delete(k) : openRows.add(k); renderTable(); }
+});
+let dragKey = null;
+$("#main").addEventListener("dragstart", e => { const tr = e.target.closest("tr[data-item]"); if (!tr) return; dragKey = tr.dataset.item; tr.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragKey); });
+$("#main").addEventListener("dragend", () => { dragKey = null; document.querySelectorAll(".dragging,.dropbefore,.dragover").forEach(n => n.classList.remove("dragging", "dropbefore", "dragover")); });
+$("#main").addEventListener("dragover", e => {
+  if (!dragKey) return; e.preventDefault();
+  document.querySelectorAll(".dropbefore,.dragover").forEach(n => n.classList.remove("dropbefore", "dragover"));
+  const tr = e.target.closest("tr[data-item]"), h = e.target.closest("h2[data-sec]");
+  if (tr && tr.dataset.item !== dragKey) tr.classList.add("dropbefore"); else if (h) h.closest("section").classList.add("dragover");
+});
+$("#main").addEventListener("drop", e => {
+  if (!dragKey) return; e.preventDefault();
+  const tr = e.target.closest("tr[data-item]"), h = e.target.closest("h2[data-sec]"), sec = e.target.closest("section");
+  if (!sec) return;
+  const secs = curSections().map(s => ({ title: s.title, items: s.items.filter(k => k !== dragKey) }));
+  const target = secs.find(s => s.title === sec.dataset.title);
+  if (tr && tr.dataset.item !== dragKey) { const i = target.items.indexOf(tr.dataset.item); target.items.splice(i < 0 ? target.items.length : i, 0, dragKey); }
+  else target.items.push(dragKey);
+  dragKey = null; commit(secs);
+});
+
+/* add-sensor modal */
+const djb = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(16); };
+const rxEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function openModal(section) {
+  readings = await (await fetch("/api/readings")).json();
+  const secs = curSections();
+  $("#mbox").innerHTML = `<h3>Add sensor</h3>
+    <input type="text" id="mq" placeholder="Search readings (e.g. fan, vcore, nvme, 'GPU Clock')" style="width:100%">
+    <select id="mlist" size="12"></select>
+    <div class="r"><b>Into section</b><select id="msec">${secs.map(s => `<option ${s.title === section ? "selected" : ""}>${esc(s.title)}</option>`).join("")}</select>
+      <button class="btn" id="madd">Add</button><button class="btn on" id="mdone">Done</button></div>
+    <div class="r"><b>New section</b><input type="text" id="mnew" placeholder="Section title"><button class="btn" id="mnewb">Create</button></div>
+    <div class="hint" id="mmsg"></div>`;
+  $("#modal").classList.add("open");
+  const fill = () => {
+    const q = $("#mq").value.toLowerCase();
+    $("#mlist").innerHTML = readings.map((r, i) => [r, i]).filter(([r]) => (r.label + " " + r.sensor).toLowerCase().includes(q)).slice(0, 400)
+      .map(([r, i]) => `<option value="${i}">${esc(r.label)}  —  ${esc(r.sensor.replace(/^.*?:\s*/, "").slice(0, 38))}  (${esc(r.unit || "-")})  ${esc(fmt(r.cur, r.unit))}</option>`).join("");
+  };
+  fill(); $("#mq").oninput = fill; $("#mq").focus();
+  $("#mdone").onclick = () => $("#modal").classList.remove("open");
+  $("#madd").onclick = async () => {
+    const i = $("#mlist").value; if (i === "") return;
+    const r = readings[+i], key = "u_" + djb(r.sensor + "|" + r.label + "|" + r.unit);
+    const secs2 = curSections(), tgt = secs2.find(s => s.title === $("#msec").value) || secs2[0];
+    if (!tgt) return;
+    if (secs2.some(s => s.items.includes(key))) { $("#mmsg").textContent = "Already in this view."; return; }
+    tgt.items.push(key);
+    const item = { name: r.label, sensor: "^" + rxEsc(r.sensor) + "$", label: "^" + rxEsc(r.label) + "$" };
+    if (r.unit) item.unit = "^" + rxEsc(r.unit) + "$";
+    if (r.unit.endsWith("C")) { item.warn = 70; item.crit = 85; }
+    await commit(secs2, { [key]: item });
+    $("#mmsg").textContent = "Added “" + r.label + "” to " + tgt.title + ".";
+  };
+  $("#mnewb").onclick = async () => {
+    const t = $("#mnew").value.trim(); if (!t) return;
+    const secs2 = curSections(); if (secs2.some(s => s.title === t)) { $("#mmsg").textContent = "Section exists."; return; }
+    secs2.push({ title: t, items: [] }); await commit(secs2); $("#modal").classList.remove("open");
+  };
+}
+$("#modal").addEventListener("click", e => { if (e.target.id === "modal") $("#modal").classList.remove("open"); });
+
+/* width handles */
+let drag = null;
+document.querySelectorAll(".rz").forEach(h => h.addEventListener("pointerdown", e => {
+  const v = viewDef(); if (!v || view === "builder" || SOLO) return;
+  const s = vp(v), w = $("#wrap");
+  drag = { side: h.dataset.side, x: e.clientX, w0: w.getBoundingClientRect().width, align: s.align, el: h };
+  h.classList.add("drag"); h.setPointerCapture(e.pointerId); e.preventDefault();
+}));
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  let dx = (e.clientX - drag.x) * (drag.side === "r" ? 1 : -1);
+  if (drag.align === "center") dx *= 2;
+  const w = Math.round(Math.min(innerWidth, Math.max(260, drag.w0 + dx)));
+  savePrefs({ ui: { [view]: { width: w } } }); applyWidth(viewDef());
+});
+addEventListener("pointerup", () => { if (!drag) return; drag.el.classList.remove("drag"); drag = null; renderPanel(); renderTable(); });
+
+/* ---------- builder ---------- */
+const B = { names: [], name: "", d: { image: null, boxes: [] }, sel: null, edit: true, dirty: false, armedDelete: false, ready: false };
+const uid = () => "b" + Math.random().toString(36).slice(2, 8);
+const sensorById = id => (data && data.sensors || []).find(s => s.id === id);
+
+async function builderInit() {
+  B.names = (await (await fetch("/api/profiles")).json()).names;
+  if (!B.ready) {
+    B.ready = true;
+    const want = prefs.active_profile && B.names.includes(prefs.active_profile) ? prefs.active_profile : B.names[0];
+    if (want) await loadProfile(want); else { B.name = ""; B.d = { image: null, boxes: [] }; }
+  }
+  renderBuilder();
+}
+async function loadProfile(name) {
+  const r = await fetch("/api/profile?name=" + encodeURIComponent(name));
+  if (!r.ok) return;
+  B.d = await r.json(); B.d.boxes = B.d.boxes || []; B.name = name; B.sel = null; B.dirty = false;
+  savePrefs({ active_profile: name });
+}
+function renderBuilder() {
+  applyWidth(null);
+  $("#colhead").innerHTML = ""; $("#editbar").innerHTML = "";
+  document.body.classList.remove("dense");
+  $("#main").style.fontSize = "";
+  document.title = "Builder – Sensors";
+  $("#main").dataset.sig = "";
+  $("#main").innerHTML = `
+    <div id="bar">
+      <select id="pSel"><option value="">${B.names.length ? "Load profile…" : "No saved profiles"}</option>${B.names.map(n => `<option ${n === B.name ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <input type="text" id="pName" placeholder="Profile name" value="${esc(B.name)}" size="16">
+      <button class="btn" id="pSave">Save${B.dirty ? " ●" : ""}</button>
+      <button class="btn" id="pNew">New</button>
+      <button class="btn danger" id="pDel">${B.armedDelete ? "Sure?" : "Delete"}</button>
+      <span class="grow"></span>
+      <button class="btn" id="pImg">Import image…</button>
+      <button class="btn" id="pAdd">+ Text box</button>
+      <label><input type="checkbox" id="pEdit" ${B.edit ? "checked" : ""}> Edit</label>
+      <input type="file" id="pFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+    </div>
+    <div id="canvas" class="${B.edit ? "editing" : ""}">
+      ${B.d.image ? `<img src="/assets/${encodeURIComponent(B.d.image)}" draggable="false">` : `<div class="empty">Import an image of your PC (png / jpg / webp),<br>then add text boxes and drag them into place.</div>`}
+      ${B.d.boxes.map(b => `<div class="box ${b.id === B.sel ? "sel" : ""}" data-id="${b.id}"></div>`).join("")}
+    </div>
+    <div id="insp"></div>`;
+  B.d.boxes.forEach(styleBox);
+  builderTick(); renderInspector(); bindBuilder();
+}
+function styleBox(b) {
+  const el = document.querySelector(`.box[data-id="${b.id}"]`); if (!el) return;
+  Object.assign(el.style, { left: b.x + "%", top: b.y + "%", color: b.color || "#fff", background: `rgba(0,0,0,${b.bg == null ? .45 : b.bg})`, fontFamily: b.font ? `"${b.font}", var(--font)` : "" });
+  el.style.setProperty("--bfs", b.size || 2.2);
+}
+function boxHTML(b) {
+  const s = sensorById(b.sensor), show = b.show || {}, parts = [];
+  const nm = b.name_on === false ? "" : (b.custom_name || (s ? s.name : b.sensor || ""));
+  if (nm) parts.push(`<span class="bn">${esc(nm)}</span>`);
+  for (const k of COL_ORDER) if (show[k])
+    parts.push(`<span class="bv ${k} ${k === "cur" && b.state_color !== false && s ? s.state : ""}">${k === "cur" ? "" : k + " "}${fmt(s ? s[k] : null, s && s.unit)}</span>`);
+  return parts.join("") || '<span class="bn">(empty)</span>';
+}
+function builderTick() {
+  if (view !== "builder") return;
+  B.d.boxes.forEach(b => { const el = document.querySelector(`.box[data-id="${b.id}"]`); if (el) el.innerHTML = boxHTML(b); });
+}
+function renderInspector() {
+  const el = $("#insp"), b = B.d.boxes.find(x => x.id === B.sel);
+  if (!b || !B.edit) { el.innerHTML = `<span class="hint">${B.edit ? "Select a text box to edit it, or add one." : "Edit mode is off."} Positions are saved as a percentage of the image, so the layout scales with the window.</span>`; return; }
+  const groups = {};
+  (data && data.sensors || []).forEach(s => (groups[s.section] = groups[s.section] || []).push(s));
+  const opts = Object.keys(groups).map(g => `<optgroup label="${esc(g)}">${groups[g].map(s => `<option value="${esc(s.id)}" ${s.id === b.sensor ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</optgroup>`).join("");
+  const sh = b.show || {};
+  el.innerHTML = `
+    <div class="r"><b>Sensor</b><select id="iS">${opts}${!sensorById(b.sensor) && b.sensor ? `<option selected value="${esc(b.sensor)}">${esc(b.sensor)} (not live)</option>` : ""}</select></div>
+    <div class="r"><b>Show</b>${COL_ORDER.map(c => `<label><input type="checkbox" data-k="${c}" ${sh[c] ? "checked" : ""}> ${COLS[c]}</label>`).join("")}</div>
+    <div class="r"><b>Name</b><label><input type="checkbox" id="iN" ${b.name_on === false ? "" : "checked"}> Show</label>
+      <input type="text" id="iC" placeholder="custom name (optional)" value="${esc(b.custom_name || "")}" size="24"></div>
+    <div class="r"><b>Style</b><label>Size <input type="range" id="iZ" min="0.8" max="8" step="0.1" value="${b.size || 2.2}"></label>
+      <label>Font <input type="text" id="iF" list="fonts" placeholder="(theme)" value="${esc(b.font || "")}" size="12"></label>
+      <label>Text <input type="color" id="iCol" value="${b.color || "#ffffff"}"></label>
+      <label>Backdrop <input type="range" id="iB" min="0" max="1" step="0.05" value="${b.bg == null ? .45 : b.bg}"></label>
+      <label><input type="checkbox" id="iSt" ${b.state_color === false ? "" : "checked"}> Warn/crit colors</label>
+      <button class="btn danger" id="iDel">Remove box</button></div>`;
+  const upd = () => { styleBox(b); builderTick(); markDirty(); };
+  $("#iS").onchange = e => { b.sensor = e.target.value; upd(); };
+  el.querySelectorAll("[data-k]").forEach(cb => cb.onchange = () => { b.show = b.show || {}; b.show[cb.dataset.k] = cb.checked; upd(); });
+  $("#iN").onchange = e => { b.name_on = e.target.checked; upd(); };
+  $("#iC").oninput = e => { b.custom_name = e.target.value; upd(); };
+  $("#iZ").oninput = e => { b.size = +e.target.value; upd(); };
+  $("#iF").onchange = e => { b.font = e.target.value.trim(); upd(); };
+  $("#iCol").oninput = e => { b.color = e.target.value; upd(); };
+  $("#iB").oninput = e => { b.bg = +e.target.value; upd(); };
+  $("#iSt").onchange = e => { b.state_color = e.target.checked; upd(); };
+  $("#iDel").onclick = () => { B.d.boxes = B.d.boxes.filter(x => x !== b); B.sel = null; markDirty(); renderBuilder(); };
+}
+function markDirty() { B.dirty = true; const s = $("#pSave"); if (s) s.textContent = "Save ●"; }
+function bindBuilder() {
+  $("#pSel").onchange = async e => { if (e.target.value) { await loadProfile(e.target.value); renderBuilder(); } };
+  $("#pNew").onclick = () => { B.name = ""; B.d = { image: null, boxes: [] }; B.sel = null; B.dirty = false; renderBuilder(); };
+  $("#pSave").onclick = async () => {
+    const name = $("#pName").value.trim();
+    if (!name) { $("#pName").focus(); return; }
+    const r = await post("/api/profile", { name, data: B.d });
+    if (r.name) { B.name = r.name; B.dirty = false; savePrefs({ active_profile: r.name }); B.names = (await (await fetch("/api/profiles")).json()).names; renderBuilder(); }
+  };
+  $("#pDel").onclick = async () => {
+    if (!B.name) return;
+    if (!B.armedDelete) { B.armedDelete = true; $("#pDel").textContent = "Sure?"; setTimeout(() => { B.armedDelete = false; const d = $("#pDel"); if (d) d.textContent = "Delete"; }, 3000); return; }
+    await post("/api/profile/delete", { name: B.name });
+    B.armedDelete = false; B.name = ""; B.d = { image: null, boxes: [] }; B.sel = null; B.dirty = false;
+    B.names = (await (await fetch("/api/profiles")).json()).names; renderBuilder();
+  };
+  $("#pEdit").onchange = e => { B.edit = e.target.checked; renderBuilder(); };
+  $("#pImg").onclick = () => $("#pFile").click();
+  $("#pFile").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = await fetch("/api/image?name=" + encodeURIComponent(f.name), { method: "POST", headers: { "X-HWV": "1" }, body: await f.arrayBuffer() });
+    const j = await r.json();
+    if (j.file) { B.d.image = j.file; markDirty(); renderBuilder(); } else alert(j.error || "Upload failed");
+  };
+  $("#pAdd").onclick = () => {
+    const first = (data && data.sensors || [])[0];
+    const b = { id: uid(), sensor: first ? first.id : "", x: 8 + (B.d.boxes.length * 3) % 40, y: 8 + (B.d.boxes.length * 6) % 60,
+      name_on: true, custom_name: "", show: { cur: true, min: false, max: false, avg: false }, size: 2.2, color: "#ffffff", bg: .45, state_color: true };
+    B.d.boxes.push(b); B.sel = b.id; markDirty(); renderBuilder();
+  };
+  const cv = $("#canvas");
+  cv.onpointerdown = e => {
+    const el = e.target.closest(".box"); if (!el || !B.edit) { if (B.edit && B.sel) { B.sel = null; renderBuilder(); } return; }
+    const b = B.d.boxes.find(x => x.id === el.dataset.id), r = cv.getBoundingClientRect();
+    const sel = B.sel !== b.id; B.sel = b.id;
+    cv.querySelectorAll(".box").forEach(n => n.classList.toggle("sel", n === el));
+    if (sel) renderInspector();
+    const ox = (e.clientX - r.left) / r.width * 100 - b.x, oy = (e.clientY - r.top) / r.height * 100 - b.y;
+    cv.setPointerCapture(e.pointerId);
+    cv.onpointermove = ev => {
+      const rr = cv.getBoundingClientRect();
+      const mx = Math.max(0, 100 - el.offsetWidth / rr.width * 100), my = Math.max(0, 100 - el.offsetHeight / rr.height * 100);
+      b.x = Math.max(0, Math.min(mx, +((ev.clientX - rr.left) / rr.width * 100 - ox).toFixed(2)));
+      b.y = Math.max(0, Math.min(my, +((ev.clientY - rr.top) / rr.height * 100 - oy).toFixed(2)));
+      styleBox(b); markDirty();
+    };
+    cv.onpointerup = () => { cv.onpointermove = cv.onpointerup = null; };
+  };
+}
+addEventListener("keydown", e => {
+  if (view !== "builder" || !B.edit || !B.sel || e.key !== "Delete" || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  B.d.boxes = B.d.boxes.filter(x => x.id !== B.sel); B.sel = null; markDirty(); renderBuilder();
+});
+
+/* ---------- main loop ---------- */
+async function enterView() {
+  if (!SOLO) { view = location.hash.slice(1) || "full"; savePrefs({ last_view: view }); }
+  renderNav(); renderPanel(); renderEditBar();
+  if (view === "builder") await builderInit(); else renderTable();
+  tickStamp();
+}
+function tickStamp() {
+  const s = $("#stamp"); if (!s || !data) return;
+  let t = new Date(data.ts * 1000).toLocaleTimeString();
+  s.classList.remove("warn");
+  const hm = sec => { const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return (h ? h + "h " : "") + m + "m"; };
+  const wd = data.watchdog;
+  if (data.reconnecting) {
+    s.classList.add("warn");
+    t += wd && wd.state === "restarting" ? " · HWiNFO restarting – reconnecting…" : " · reconnecting to HWiNFO…";
+  } else if (lastOk && data.uptime != null) {
+    t += " · live " + hm(data.uptime);
+    if (wd && wd.restart_at) t += " · HWiNFO restart in " + hm(Math.max(0, wd.restart_at - Date.now() / 1000));
+    else if (data.uptime > 11 * 3600) { s.classList.add("warn"); t += " – free SHM expires at 12 h"; }
+  }
+  s.textContent = t;
+}
+async function tick() {
+  const banner = $("#banner");
+  try {
+    const d = await (await fetch("/api/data", { cache: "no-store" })).json();
+    if (d.ok) { data = d; lastOk = !d.reconnecting; banner.style.display = "none"; }  // reconnecting: last values, dimmed
+    else { lastOk = false; banner.textContent = d.error; banner.style.display = "block"; }
+    if (d.rev != null && d.rev !== seenRev && !saveTimer && !inflight) {   // settings changed elsewhere (another window / tray)
+      seenRev = d.rev;
+      prefs = Object.assign({ ui: {}, theme: {} }, await (await fetch("/api/settings")).json());
+      applyTheme(); await refreshLayouts();
+      if (!($("#panel").contains(document.activeElement))) renderPanel();
+      if (env) try { env.window = prefs.window; } catch (e) {}
+    }
+  } catch (e) {
+    lastOk = false; banner.textContent = "Viewer server not reachable – is it still running?"; banner.style.display = "block";
+  }
+  if (data && !$("#nav a") && !SOLO) renderNav();
+  if (SOLO && data) { const t = $("#nav .ttl"); if (!t || !t.textContent.trim()) renderNav(); }
+  if (view === "builder") { builderTick(); if (data && !B.firstData) { B.firstData = true; renderInspector(); } }
+  else if (data) renderTable();
+  tickStamp();
+}
+async function boot() {
+  try { const s = await (await fetch("/api/settings")).json(); prefs = Object.assign({ ui: {}, theme: {} }, s); seenRev = s.rev; } catch (e) {}
+  applyTheme(); await refreshLayouts();
+  if (!SOLO && !location.hash && prefs.last_view) history.replaceState(null, "", "#" + prefs.last_view);
+  await tick();
+  await enterView();
+  setInterval(tick, 1000);
+}
+addEventListener("hashchange", () => { if (!SOLO) enterView(); });
+addEventListener("pywebviewready", async () => {
+  try { env = await window.pywebview.api.get_env(); renderNav(); renderPanel(); } catch (e) {}
+});
+boot();
+</script>
+</body>
+</html>
