@@ -314,6 +314,23 @@ impl Desktop {
             "hide" | "close" => self.hide_main(),
             "quit" => self.quit(cf),
             "log" => warn!("ui [{key}]: {}", s("msg")),
+            // setup wizard: the task needs admin, so this shows one UAC prompt; the wizard polls /api/system
+            "watchdog_install" | "watchdog_uninstall" => {
+                let sub = if m["cmd"] == "watchdog_install" { "install" } else { "uninstall" };
+                let r = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+                    let dir = exe.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+                    crate::watchdog::process::shell_runas(&exe, &["watchdog".into(), sub.into()], &dir, 0)
+                });
+                if let Err(e) = r {
+                    warn!("watchdog {sub}: {e}");
+                }
+            }
+            "autostart" => {
+                let mode = if s("mode") == "tray" { "tray" } else { "app" };
+                if let Err(e) = crate::autostart::set(m["on"].as_bool().unwrap_or(false), mode) {
+                    warn!("autostart: {e}");
+                }
+            }
             "open_url" => win32::open_url(&self.url),
             "copy_url" => {
                 let _ = win32::copy_text(&self.url);

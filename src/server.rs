@@ -392,6 +392,8 @@ pub struct Ctx {
     pub web: Web,
     /// Desktop modes: bring the main window forward (POST /api/focus from a second launch).
     pub on_focus: Option<Hook>,
+    /// "app" | "tray" | "serve" (shown by the setup wizard)
+    pub mode: &'static str,
 }
 
 struct Reply {
@@ -491,6 +493,8 @@ fn get(app: &App, ctx: &Ctx, path: &str, query: &str) -> Reply {
         "/api/profiles" => reply_json(200, &json!({"names": app.profiles.names()})),
         "/api/layouts" => reply_json(200, &json!({"names": app.layouts.names(), "active": app.active_layout_name()})),
         "/api/readings" => reply_json(200, &app.readings()),
+        #[cfg(windows)]
+        "/api/system" => reply_json(200, &crate::system::info(ctx.mode, ctx.port, ctx.lan)),
         "/api/profile" => match app.profiles.load(&query_param(query, "name").unwrap_or_default()) {
             Some(v) => reply_json(200, &v),
             None => err(404, "not found"),

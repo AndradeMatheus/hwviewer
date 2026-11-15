@@ -13,6 +13,8 @@
 #[macro_use]
 mod log;
 #[cfg(windows)]
+mod autostart;
+#[cfg(windows)]
 mod desktop;
 mod paths;
 #[cfg(windows)]
@@ -20,6 +22,8 @@ mod runtime;
 mod server;
 mod shm;
 mod storage;
+#[cfg(windows)]
+mod system;
 mod views;
 #[cfg(windows)]
 mod watchdog;
@@ -141,7 +145,8 @@ fn serve(a: ServeArgs) -> Result<(), String> {
     if a.open {
         open_browser(&url);
     }
-    let ctx = Arc::new(server::Ctx { port, lan, web: paths::Web::resolve(a.desk.web_dir), on_focus: None });
+    let ctx =
+        Arc::new(server::Ctx { port, lan, web: paths::Web::resolve(a.desk.web_dir), on_focus: None, mode: "serve" });
     server::run(Arc::new(srv), app, ctx, 4);
     Ok(())
 }
@@ -157,9 +162,12 @@ fn desktop_mode(a: DeskArgs, tray_mode: bool) -> Result<(), String> {
     log::init("app");
     let data = paths::data_dir();
     let app = Arc::new(server::App::new(source(&a.src), config_path(&a.src)?, &data));
-    let (srv, port) = server::bind("127.0.0.1", a.port, 10)?;
+    // "lan" (setup wizard): other devices may view it, read-only; applied at start-up
+    let lan = server::lock(&app.settings).data["lan"].as_bool().unwrap_or(false);
+    let (srv, port) = server::bind(if lan { "0.0.0.0" } else { "127.0.0.1" }, a.port, 10)?;
     let url = format!("http://127.0.0.1:{port}/");
-    runtime::publish(port, &url, if tray_mode { "tray" } else { "app" });
+    let mode = if tray_mode { "tray" } else { "app" };
+    runtime::publish(port, &url, mode);
     info!(
         "HWiNFO viewer {} at {url} ({} mode, data {})",
         env!("CARGO_PKG_VERSION"),
@@ -172,11 +180,12 @@ fn desktop_mode(a: DeskArgs, tray_mode: bool) -> Result<(), String> {
     let focus = Mutex::new(proxy.clone());
     let ctx = Arc::new(server::Ctx {
         port,
-        lan: false,
+        lan,
         web: paths::Web::resolve(a.web_dir),
         on_focus: Some(Arc::new(move || {
             let _ = server::lock(&focus).send_event(desktop::Ev::Focus);
         })),
+        mode,
     });
     let (srv, app2) = (Arc::new(srv), app.clone());
     std::thread::spawn(move || server::run(srv, app2, ctx, 4));

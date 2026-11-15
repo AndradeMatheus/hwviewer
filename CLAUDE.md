@@ -6,7 +6,16 @@ An optional elevated watchdog restarts HWiNFO before the free version's 12 h sha
 
 Owner: single developer, test project. Target machine: Windows 11, Python 3.10, Ryzen 5800X / B550 / RTX 3070 Ti.
 
-## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog ✅, R3 desktop/tray ✅, R4 packaging, R5 OSD)
+## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog ✅, R3 desktop/tray ✅, R4 packaging ✅, R5 OSD)
+
+**Sensor-monitoring retro-port:** the user is developing new sensor monitoring in another session, to be ported in
+here later. Keep these integration points stable and small: `shm::DataSource` (trait: `read() -> Result<Snapshot,
+SmError>`), `shm::Reading` (sensor, label, label_orig, unit, typ, cur/min/max/avg), and the `views.json` catalog
+format (`views.rs`). A new data source should plug in as another `DataSource`, not by changing the server or UI.
+
+Packaging: `packaging/build.ps1` (release exe + `dist/` portable zip + Inno installer), `packaging/installer.iss`
+(AppId is fixed: never change it), `.github/workflows/ci.yml` (fmt/clippy/test on push; tag `v*` → Release).
+Bump the version in `Cargo.toml` only: `build.rs` (exe version info) and the installer read it from there.
 The Rust crate (`Cargo.toml`, `src/`) is replacing the Python code (`hwv/`, root `.py` scripts) milestone by milestone.
 Until R3 reaches parity, **both exist**: keep the Python side working, and keep JSON/API/file formats identical
 (`web/index.html` talks to either server unchanged). See docs/DECISIONS.md #8.
@@ -36,6 +45,12 @@ cargo build --release                              # target/release/hwviewer.exe
 | `src/log.rs` | rotating `<data>/logs/<component>.log` + `info!`/`warn!`/`error!` macros |
 | `src/desktop/` (`mod.rs` tao loop + wry windows + tray, `win32.rs`, `icon.rs`) | `hwv/desktop.py` |
 | `src/runtime.rs` | new: single instance (mutex) + `<data>/runtime.json` {pid, port, url, mode}; 2nd launch → `POST /api/focus` |
+| `src/system.rs`, `src/autostart.rs` | new: `GET /api/system` for the setup wizard (`#setup` in index.html); HKCU Run autostart |
+| `build.rs` | exe icon + version info from `assets/icon.ico` and `Cargo.toml` |
+
+UI checks without touching the user's screen: render pages with headless Edge, e.g.
+`msedge --headless=new --disable-gpu --user-data-dir=<scratch> --virtual-time-budget=4000 --window-size=760,520
+--screenshot=<png> http://127.0.0.1:<port>/#setup` against `cargo run -- serve --mock --port <port>`.
 
 Desktop notes:
 - The UI talks to its window over wry IPC: `shellSend({cmd: ...})` in index.html → `Desktop::on_ipc`. **Never name a

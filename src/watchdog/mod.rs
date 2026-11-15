@@ -404,6 +404,9 @@ fn install(user: &str) -> Result<(), String> {
     let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     let script = [
         "$ErrorActionPreference = 'Stop'".to_string(),
+        // replacing a running task (an upgrade, or the old Python watchdog): stop it first, or the new one is
+        // refused by -MultipleInstances IgnoreNew and the old one keeps the single-instance mutex
+        format!("Stop-ScheduledTask -TaskName {} -ErrorAction SilentlyContinue", ps_quote(TASK_NAME)),
         format!(
             "$a = New-ScheduledTaskAction -Execute {} -Argument 'watchdog run' -WorkingDirectory {}",
             ps_quote(&exe.to_string_lossy()),
@@ -424,23 +427,43 @@ fn install(user: &str) -> Result<(), String> {
     .join("\n");
     let (ok, out) = powershell(&script);
     if !ok {
+        error!("watchdog install failed: {out}");
         return Err(format!("could not register the task:\n{out}"));
     }
+    info!("installed scheduled task '{TASK_NAME}' for {user}: \"{}\" watchdog run", exe.display());
     println!("Installed and started scheduled task '{TASK_NAME}' for {user} (runs at logon, elevated).");
     println!("Command: \"{}\" watchdog run", exe.display());
     Ok(())
 }
 
+/// Removing a task that isn't there is fine (the uninstaller always calls this).
 fn uninstall() -> Result<(), String> {
     let t = ps_quote(TASK_NAME);
     let (ok, out) = powershell(&format!(
-        "Stop-ScheduledTask -TaskName {t} -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName {t} -Confirm:$false"
+        "Stop-ScheduledTask -TaskName {t} -ErrorAction SilentlyContinue; \
+         Unregister-ScheduledTask -TaskName {t} -Confirm:$false -ErrorAction SilentlyContinue"
     ));
     if !ok {
+        error!("watchdog uninstall failed: {out}");
         return Err(format!("could not remove the task:\n{out}"));
     }
+    info!("removed scheduled task '{TASK_NAME}'");
     println!("Removed scheduled task '{TASK_NAME}'.");
     Ok(())
+}
+
+/// (state, command line) of the registered task, in one PowerShell call.
+pub fn task_info() -> Option<(String, String)> {
+    let (ok, out) = powershell(&format!(
+        "$t = Get-ScheduledTask -TaskName {} -ErrorAction Stop; $a = $t.Actions[0]; \
+         \"$($t.State)`n$($a.Execute) $($a.Arguments)\"",
+        ps_quote(TASK_NAME)
+    ));
+    if !ok {
+        return None;
+    }
+    let (state, cmd) = out.split_once('\n').unwrap_or((&out, ""));
+    Some((state.trim().to_string(), cmd.trim().to_string()))
 }
 
 /// The registered task's command line, e.g. to spot a task still pointing at the Python script.
@@ -519,12 +542,12 @@ pub fn cli(a: WdArgs) -> Result<(), String> {
             println!("Continuing in the elevated window...");
             return Ok(());
         }
+        crate::log::init("watchdog"); // also for install/uninstall: the installer runs them hidden
         match cmd {
             WdCmd::Install => return install(&a.for_user.clone().unwrap_or_else(current_user)),
             WdCmd::Uninstall => return uninstall(),
             _ => {}
         }
-        crate::log::init("watchdog");
         let cfg_path = a.config.clone().unwrap_or_else(config_path);
         let mut wd = Watchdog::new(load_config(&cfg_path), status_path());
         if cmd == WdCmd::RestartNow {

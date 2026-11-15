@@ -79,3 +79,17 @@ With a title bar the same style rendered unreliably (sometimes not at all), so s
 only. Background, box and text opacity are then plain CSS alphas (`theme.bgAlpha/boxAlpha/textAlpha`); the
 background alpha is applied only in a frameless desktop window. Separately, WebView2 start-up can drop
 `WS_EX_TOPMOST`, so the 1 s timer re-asserts "always on top".
+
+### 11. Packaging: one exe, Inno installer + portable zip, watchdog installed with the app (2026-11)
+`hwviewer.exe` is the only shipped file. The UI is embedded, the icon and version info come from `build.rs`
+(`embed-resource` 3.0.12, with rc.exe from the Windows SDK), and the window/tray icons are generated in code.
+- **Installer** (Inno Setup 6, admin, Program Files): the watchdog task is checked by default.
+  `watchdog install` stops any running task first, so it also replaces the old Python one. `PrepareToInstall`
+  ends the task so the exe can be replaced. Uninstall removes the task and asks before deleting
+  `%LOCALAPPDATA%\HWiNFO Viewer`.
+- **Portable**: `portable.txt` beside the exe switches data to `.\data`.
+- **Setup wizard**: `#setup` in the UI, backed by `GET /api/system`. It shows on the first desktop start
+  (`settings.setup_done`) and from the gear menu.
+- **Sizes for 0.3.0**: installer 3.06 MB, zip 1.57 MB.
+- **CI**: windows-latest, fmt/clippy/test. Tags build and publish with `gh release`, so no third-party
+  release action is needed.

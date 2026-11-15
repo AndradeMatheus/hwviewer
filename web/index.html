@@ -130,6 +130,14 @@
   #insp { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 8px 10px; margin-top: 8px; font-size: 12px; }
   #insp .r { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 3px 0; }
   #insp select { max-width: 100%; }
+  /* setup wizard */
+  .wiz { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 14px 18px; max-width: 640px; margin: 0 auto; }
+  .wsteps { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+  .wsteps .on { color: var(--accent); font-weight: 600; } .wsteps .done { color: var(--text); }
+  .wbody { min-height: 190px; line-height: 1.5; } .wbody h3 { margin: 2px 0 10px; }
+  .wbody .st { margin: 6px 0; } .wbody .good { color: #4caf50; } .wbody .bad { color: var(--warn); }
+  .wbody code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  .wnav { display: flex; gap: 8px; align-items: center; margin-top: 14px; } .wnav .grow { flex: 1; }
 </style>
 </head>
 <body>
@@ -265,7 +273,7 @@ function renderPanel() {
   p.classList.toggle("open", panelOpen && !SOLO);
   if (!panelOpen || SOLO) return;
   const v = viewDef(), t = prefs.theme || {}, base = PRESETS[t.preset] || PRESETS.Dark, W = (env && env.window) || {};
-  let h = "";
+  let h = `<div class="r"><button class="btn" id="psetup">Setup wizard…</button><span class="hint">HWiNFO check, watchdog, startup, network</span></div>`;
   if (v) {
     const s = vp(v);
     h += group("View", `
@@ -316,6 +324,7 @@ function renderPanel() {
   p.innerHTML = h;
   const q = (s) => p.querySelector(s), qa = s => p.querySelectorAll(s);
   qa("details > summary").forEach(sm => sm.addEventListener("click", () => { const d = sm.parentElement; d.open ? openGroups.delete(d.dataset.g) : openGroups.add(d.dataset.g); }));
+  q("#psetup").onclick = () => { panelOpen = false; WZ.step = 0; location.hash = "#setup"; };
   // view
   qa('[data-seg="align"] button').forEach(b => b.onclick = () => setView({ align: b.dataset.v }));
   qa('[data-seg="sort"] button').forEach(b => b.onclick = () => setView({ sort: b.dataset.v }));
@@ -685,11 +694,71 @@ addEventListener("keydown", e => {
   B.d.boxes = B.d.boxes.filter(x => x.id !== B.sel); B.sel = null; markDirty(); renderBuilder();
 });
 
+/* ---------- setup wizard (#setup; shown once on first run of the desktop app, and from the gear menu) ---------- */
+const WZ = { step: 0, sys: null, n: 0, pending: "" };
+const STEPS = ["Welcome", "HWiNFO", "Watchdog", "Startup", "Network", "Done"];
+async function setupRefresh() {
+  try { WZ.sys = await (await fetch("/api/system")).json(); } catch (e) {}
+  if (view === "setup") renderSetup();
+}
+function renderSetup() {
+  $("#colhead").innerHTML = ""; $("#editbar").innerHTML = "";
+  const s = WZ.sys, st = WZ.step;
+  const mark = (ok, yes, no) => `<div class="st ${ok ? "good" : "bad"}">${ok ? "✔ " + yes : "✖ " + no}</div>`;
+  const desk = !!SHELL, wait = WZ.pending ? `<div class="st hint">${esc(WZ.pending)}</div>` : "";
+  let body;
+  if (!s) body = `<h3>${STEPS[st]}</h3><p class="hint">Checking your system…</p>`;
+  else if (st === 0) body = `<h3>Welcome to HWiNFO Viewer ${esc(s.version)}</h3>
+      <p>A few quick checks so your sensors show up and stay up: HWiNFO's shared memory, the watchdog that keeps it alive,
+      starting with Windows, and access from other devices.</p><p class="hint">You can reopen this from the gear menu at any time.</p>`;
+  else if (st === 1) body = `<h3>HWiNFO</h3>${mark(s.hwinfo.running, "HWiNFO64 is running", "HWiNFO64 is not running")}
+      ${mark(s.hwinfo.shm === "ok", "Shared memory is on (" + esc(s.hwinfo.shm_msg) + ")", "Shared memory: " + esc(s.hwinfo.shm_msg))}
+      <p class="hint">In HWiNFO: <b>Settings → General / User Interface → Shared Memory Support</b>, and keep the Sensors window running.
+      The next step can start HWiNFO for you and keep it that way.</p>`;
+  else if (st === 2) body = `<h3>Watchdog</h3><p>The free HWiNFO switches shared memory off after 12 hours. The watchdog restarts HWiNFO
+      silently at 11.5 h (sensors only, no welcome screen) and starts it at logon. It runs as a small elevated background task.</p>
+      ${mark(s.watchdog.installed && !s.watchdog.legacy, "Installed (" + esc(s.watchdog.state || "") + ")", s.watchdog.legacy ? "An old Python watchdog is installed - install to replace it" : "Not installed")}
+      ${desk ? `<button class="btn on" id="wzWdI">${s.watchdog.installed ? "Reinstall" : "Install"} watchdog</button>
+        ${s.watchdog.installed ? '<button class="btn" id="wzWdU">Remove</button>' : ""}<span class="hint"> Windows asks for permission once.</span>`
+        : '<p class="hint">Open the desktop app to install it, or run <code>hwviewer watchdog install</code>.</p>'}${wait}`;
+  else if (st === 3) body = `<h3>Startup</h3>${mark(s.autostart.on, "Starts with Windows (" + esc(s.autostart.mode || "app") + ")", "Doesn't start with Windows")}
+      ${desk ? `<p><label><input type="checkbox" id="wzAuto" ${s.autostart.on ? "checked" : ""}> Start HWiNFO Viewer with Windows</label></p>
+        <p>${seg("wzMode", [["app", "Window + tray"], ["tray", "Tray only (lightest)"]], s.autostart.mode || "app")}</p>
+        <p class="hint">"Tray only" opens no window at logon: the sensors are one click away in the tray or the browser.</p>`
+        : '<p class="hint">Available in the desktop app.</p>'}`;
+  else if (st === 4) body = `<h3>Network</h3><p>This PC: <code>${esc(s.url)}</code></p>
+      <p><label><input type="checkbox" id="wzLan" ${prefs.lan ? "checked" : ""}> Let other devices on my network view the sensors (read-only)</label></p>
+      ${s.lan_url ? `<p>From a phone or another PC: <code>${esc(s.lan_url)}</code></p>` : ""}
+      <p class="hint">${prefs.lan !== !!s.lan ? "Restart the app to apply. " : ""}Settings can only be changed on this PC.</p>`;
+  else body = `<h3>All set</h3>${mark(s.hwinfo.shm === "ok", "Sensors are live", "HWiNFO's shared memory isn't available yet")}
+      ${mark(s.watchdog.installed && !s.watchdog.legacy, "Watchdog installed", "No watchdog - HWiNFO free stops sharing after 12 h")}
+      <p>Open the sensors in any browser on this PC: <code>${esc(s.url)}</code></p><p class="hint">Data folder: <code>${esc(s.data_dir)}</code></p>`;
+  $("#main").innerHTML = `<div class="wiz"><div class="wsteps">${STEPS.map((n, i) => `<span class="${i === st ? "on" : i < st ? "done" : ""}">${i + 1}. ${n}</span>`).join("")}</div>
+    <div class="wbody">${body}</div><div class="wnav"><button class="btn" id="wzBack" ${st === 0 ? "disabled" : ""}>Back</button>
+    <span class="grow"></span>${st < STEPS.length - 1 ? '<button class="btn" id="wzSkip">Skip setup</button>' : ""}
+    <button class="btn on" id="wzNext">${st === STEPS.length - 1 ? "Finish" : "Next"}</button></div></div>`;
+  const q = s => $("#main").querySelector(s);
+  const finish = () => { savePrefs({ setup_done: true }); location.hash = "#" + (prefs.last_view && prefs.last_view !== "setup" ? prefs.last_view : "full"); };
+  q("#wzBack").onclick = () => { WZ.step = Math.max(0, st - 1); renderSetup(); };
+  q("#wzNext").onclick = () => { if (st === STEPS.length - 1) finish(); else { WZ.step = st + 1; renderSetup(); } };
+  if (q("#wzSkip")) q("#wzSkip").onclick = finish;
+  const wd = cmd => { WZ.pending = "Waiting for Windows' permission prompt…"; shellSend({ cmd }); renderSetup(); setTimeout(() => { WZ.pending = ""; setupRefresh(); }, 6000); };
+  if (q("#wzWdI")) q("#wzWdI").onclick = () => wd("watchdog_install");
+  if (q("#wzWdU")) q("#wzWdU").onclick = () => wd("watchdog_uninstall");
+  const auto = () => { shellSend({ cmd: "autostart", on: q("#wzAuto").checked, mode: (q('[data-seg="wzMode"] .on') || {}).dataset.v || "app" }); setTimeout(setupRefresh, 400); };
+  if (q("#wzAuto")) q("#wzAuto").onchange = auto;
+  $("#main").querySelectorAll('[data-seg="wzMode"] button').forEach(b => b.onclick = () => {
+    $("#main").querySelectorAll('[data-seg="wzMode"] button').forEach(x => x.classList.toggle("on", x === b)); if (q("#wzAuto").checked) auto(); });
+  if (q("#wzLan")) q("#wzLan").onchange = e => { savePrefs({ lan: e.target.checked }); renderSetup(); };
+}
+
 /* ---------- main loop ---------- */
 async function enterView() {
-  if (!SOLO) { view = location.hash.slice(1) || "full"; savePrefs({ last_view: view }); }
+  if (!SOLO) { view = location.hash.slice(1) || "full"; if (view !== "setup") savePrefs({ last_view: view }); }
   renderNav(); renderPanel(); renderEditBar();
-  if (view === "builder") await builderInit(); else renderTable();
+  if (view === "builder") await builderInit();
+  else if (view === "setup") { renderSetup(); setupRefresh(); }
+  else renderTable();
   tickStamp();
 }
 function tickStamp() {
@@ -727,6 +796,7 @@ async function tick() {
   if (data && !$("#nav a") && !SOLO) renderNav();
   if (SOLO && data) { const t = $("#nav .ttl"); if (!t || !t.textContent.trim()) renderNav(); }
   if (view === "builder") { builderTick(); if (data && !B.firstData) { B.firstData = true; renderInspector(); } }
+  else if (view === "setup") { if (++WZ.n % 3 === 0 && !WZ.pending) setupRefresh(); }   // live status every 3 s
   else if (data) renderTable();
   tickStamp();
 }
@@ -734,7 +804,8 @@ async function boot() {
   try { const s = await (await fetch("/api/settings")).json(); prefs = Object.assign({ ui: {}, theme: {} }, s); seenRev = s.rev; } catch (e) {}
   if (SHELL) env = { window: prefs.window || {} };
   applyTheme(); await refreshLayouts();
-  if (!SOLO && !location.hash && prefs.last_view) history.replaceState(null, "", "#" + prefs.last_view);
+  if (SHELL && !SOLO && !prefs.setup_done) history.replaceState(null, "", "#setup");   // first run of the desktop app
+  else if (!SOLO && !location.hash && prefs.last_view) history.replaceState(null, "", "#" + prefs.last_view);
   await tick();
   await enterView();
   setInterval(tick, 1000);
