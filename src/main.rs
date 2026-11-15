@@ -5,11 +5,15 @@
 //! hwviewer dump                       # every sensor/label HWiNFO exposes -> data/dump.txt
 //! ```
 
+#[macro_use]
+mod log;
 mod paths;
 mod server;
 mod shm;
 mod storage;
 mod views;
+#[cfg(windows)]
+mod watchdog;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -31,6 +35,9 @@ enum Cmd {
     Serve(ServeArgs),
     /// Write every HWiNFO reading to data/dump.txt (to find patterns for views.json)
     Dump(SourceArgs),
+    /// Restart HWiNFO silently before the free version's 12 h shared-memory limit
+    #[cfg(windows)]
+    Watchdog(watchdog::WdArgs),
 }
 
 #[derive(Args, Clone, Default)]
@@ -122,6 +129,8 @@ fn main() {
         None => serve(ServeArgs::default()),
         Some(Cmd::Serve(a)) => serve(a),
         Some(Cmd::Dump(a)) => dump(a),
+        #[cfg(windows)]
+        Some(Cmd::Watchdog(a)) => watchdog::cli(a),
     };
     if let Err(e) = r {
         eprintln!("error: {e}");

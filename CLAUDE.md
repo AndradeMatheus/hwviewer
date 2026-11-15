@@ -6,7 +6,7 @@ An optional elevated watchdog restarts HWiNFO before the free version's 12 h sha
 
 Owner: single developer, test project. Target machine: Windows 11, Python 3.10, Ryzen 5800X / B550 / RTX 3070 Ti.
 
-## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog, R3 desktop/tray, R4 packaging, R5 OSD)
+## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog ✅, R3 desktop/tray, R4 packaging, R5 OSD)
 The Rust crate (`Cargo.toml`, `src/`) is replacing the Python code (`hwv/`, root `.py` scripts) milestone by milestone.
 Until R3 reaches parity, **both exist**: keep the Python side working, and keep JSON/API/file formats identical
 (`web/index.html` talks to either server unchanged). See docs/DECISIONS.md #8.
@@ -30,6 +30,14 @@ cargo build --release                              # target/release/hwviewer.exe
 | `src/server.rs` | `hwv/server.py` |
 | `src/paths.rs` | `hwv/paths.py` (+ data dir: `$HWV_DATA_DIR` > portable > repo `data/` in debug > `%LOCALAPPDATA%\HWiNFO Viewer`) |
 | `defaults/views.json` | factory copy, embedded; the editable one is `<data>/views.json` (created on first run) |
+| `src/watchdog/` (`mod.rs` loop + CLI, `process.rs` Win32, `ini.rs`) | `hwv/watchdog.py` |
+| `src/log.rs` | rotating `<data>/logs/<component>.log` + `info!`/`warn!`/`error!` macros |
+
+Watchdog stand-in test (never touches HWiNFO): set `HWV_DATA_DIR` to a scratch dir, write a config with
+`exe` = `C:\Windows\System32\PING.EXE`, `args` = `["-n","1000","127.0.0.1"]`, a scratch `ini`,
+`restart_after_hours` = `0.0027778` (10 s), `check_interval_s` = 5, `ready_timeout_s` = 3, then
+`target\debug\hwviewer.exe watchdog run --config <file> --allow-multiple` for ~30 s (`--allow-multiple` is needed
+while the real watchdog holds the shared mutex). Expect a new PING PID every 10 s.
 
 ## Commands
 ```
