@@ -6,6 +6,31 @@ An optional elevated watchdog restarts HWiNFO before the free version's 12 h sha
 
 Owner: single developer, test project. Target machine: Windows 11, Python 3.10, Ryzen 5800X / B550 / RTX 3070 Ti.
 
+## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog, R3 desktop/tray, R4 packaging, R5 OSD)
+The Rust crate (`Cargo.toml`, `src/`) is replacing the Python code (`hwv/`, root `.py` scripts) milestone by milestone.
+Until R3 reaches parity, **both exist**: keep the Python side working, and keep JSON/API/file formats identical
+(`web/index.html` talks to either server unchanged). See docs/DECISIONS.md #8.
+```
+cargo test                                         # unit tests (ported Python tests + new ones)
+cargo clippy --all-targets -- -D warnings          # must be clean
+cargo fmt --check                                  # rustfmt.toml: 120 columns
+cargo run -- serve --mock --port 8799              # debug build reads web/ from disk: edit + refresh, no rebuild
+cargo build --release                              # target/release/hwviewer.exe (~3 MB)
+```
+- Toolchain pinned in `rust-toolchain.toml` (MSVC host; VS Build Tools 2022 provide the linker).
+- `HWV_DATA_DIR=<dir>` points any build at another data folder: use a scratch dir for tests that write.
+- Rust rules: no `unwrap()`/`expect()` outside tests (one documented `expect` on static regexes); every `unsafe`
+  block only in Win32 wrappers with a `// SAFETY:` comment; locks via `server::lock()` (poison-tolerant), order
+  `inner` → `settings`; new crates need a DECISIONS entry.
+| Rust file | Python original |
+|---|---|
+| `src/shm.rs` | `hwv/shm.py` |
+| `src/views.rs` | `hwv/views.py` |
+| `src/storage.rs` | `hwv/storage.py` |
+| `src/server.rs` | `hwv/server.py` |
+| `src/paths.rs` | `hwv/paths.py` (+ data dir: `$HWV_DATA_DIR` > portable > repo `data/` in debug > `%LOCALAPPDATA%\HWiNFO Viewer`) |
+| `defaults/views.json` | factory copy, embedded; the editable one is `<data>/views.json` (created on first run) |
+
 ## Commands
 ```
 python -m unittest discover -s tests -v       # run after every change (stdlib only, ~0.1 s)

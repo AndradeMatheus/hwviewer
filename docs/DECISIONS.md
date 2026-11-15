@@ -40,3 +40,19 @@ Process lookup is by the exe's file name, so HWiNFO is never matched.
 ### 7. Runtime files under data/ (2026-11)
 Settings, profiles, layouts, assets, logs and watchdog files moved from the project root to `data/`.
 `paths.migrate_legacy()` moves old root copies on start-up.
+
+### 8. Rewrite in Rust (2026-11)
+The goal is "flexible and lightweight" plus a self-contained exe. Python stays usable until the Rust port
+reaches parity (R3), then it's removed. Crates were picked for size and to avoid an async runtime:
+`windows` (Win32), `tiny_http` (server), `serde_json` with `preserve_order` (catalog/settings key order matters),
+`regex`, `clap`. Planned later: `tao` + `wry` + `tray-icon`, which are Tauri's lower layers without the framework.
+Measured on R1, with `serve` on live HWiNFO data polled at 2 Hz:
+
+| | Python | Rust |
+|---|---|---|
+| RAM | 20.5 MB | 9.9 MB |
+| CPU | ~2% | ~0.5% |
+| Size | needs a Python install | 2.85 MB exe |
+
+The JSON payload shape and every route's status codes matched the Python server exactly (scratch parity script).
+Debug builds read `web/` from disk, so UI work needs no rebuild.
