@@ -93,3 +93,8 @@ background alpha is applied only in a frameless desktop window. Separately, WebV
 - **Sizes for 0.3.0**: installer 3.06 MB, zip 1.57 MB.
 - **CI**: windows-latest, fmt/clippy/test. Tags build and publish with `gh release`, so no third-party
   release action is needed.
+
+### 12. Python implementation removed (2026-11)
+Done once the installer had moved the live watchdog task to `C:\Program Files\HWiNFO Viewer\hwviewer.exe`
+(verified: monitoring, no pythonw left). Entries #1–#7 describe the Python era; their reasoning carries over to
+the Rust modules of the same names. Git history before `R4` has the Python code.

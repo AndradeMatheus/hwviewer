@@ -1,7 +1,5 @@
-__pycache__/
-*.pyc
+target/
+dist/
 data/
 *.tmp
 .claude/settings.local.json
-target/
-dist/

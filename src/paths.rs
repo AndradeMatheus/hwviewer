@@ -49,14 +49,7 @@ pub fn dump_file() -> PathBuf {
 pub fn ensure_views() -> io::Result<PathBuf> {
     let p = views_file();
     if !p.exists() {
-        // the pre-Rust layout kept it in the project root: carry a customised copy over
-        let legacy = PathBuf::from(MANIFEST_DIR).join("views.json");
-        let data = if cfg!(debug_assertions) && legacy.exists() {
-            std::fs::read(&legacy)?
-        } else {
-            DEFAULT_VIEWS.as_bytes().to_vec()
-        };
-        atomic_write(&p, &data)?;
+        atomic_write(&p, DEFAULT_VIEWS.as_bytes())?;
     }
     Ok(p)
 }

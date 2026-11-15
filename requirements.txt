@@ -1,4 +1,0 @@
-# only needed for the desktop widget (widget.py); the browser version has no dependencies
-pywebview
-pystray
-pillow
