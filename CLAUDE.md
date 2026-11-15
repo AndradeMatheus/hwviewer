@@ -6,7 +6,7 @@ An optional elevated watchdog restarts HWiNFO before the free version's 12 h sha
 
 Owner: single developer, test project. Target machine: Windows 11, Python 3.10, Ryzen 5800X / B550 / RTX 3070 Ti.
 
-## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog ✅, R3 desktop/tray, R4 packaging, R5 OSD)
+## Rust rewrite in progress (plan: R0 toolchain ✅, R1 core + `serve` ✅, R2 watchdog ✅, R3 desktop/tray ✅, R4 packaging, R5 OSD)
 The Rust crate (`Cargo.toml`, `src/`) is replacing the Python code (`hwv/`, root `.py` scripts) milestone by milestone.
 Until R3 reaches parity, **both exist**: keep the Python side working, and keep JSON/API/file formats identical
 (`web/index.html` talks to either server unchanged). See docs/DECISIONS.md #8.
@@ -15,6 +15,8 @@ cargo test                                         # unit tests (ported Python t
 cargo clippy --all-targets -- -D warnings          # must be clean
 cargo fmt --check                                  # rustfmt.toml: 120 columns
 cargo run -- serve --mock --port 8799              # debug build reads web/ from disk: edit + refresh, no rebuild
+cargo run -- app --mock --port 8797                # desktop window + tray (default mode); `tray` = no window until asked
+cargo run --example transparency_spike -- --backdrop   # per-pixel transparency regression check (DECISIONS #10)
 cargo build --release                              # target/release/hwviewer.exe (~3 MB)
 ```
 - Toolchain pinned in `rust-toolchain.toml` (MSVC host; VS Build Tools 2022 provide the linker).
@@ -32,6 +34,17 @@ cargo build --release                              # target/release/hwviewer.exe
 | `defaults/views.json` | factory copy, embedded; the editable one is `<data>/views.json` (created on first run) |
 | `src/watchdog/` (`mod.rs` loop + CLI, `process.rs` Win32, `ini.rs`) | `hwv/watchdog.py` |
 | `src/log.rs` | rotating `<data>/logs/<component>.log` + `info!`/`warn!`/`error!` macros |
+| `src/desktop/` (`mod.rs` tao loop + wry windows + tray, `win32.rs`, `icon.rs`) | `hwv/desktop.py` |
+| `src/runtime.rs` | new: single instance (mutex) + `<data>/runtime.json` {pid, port, url, mode}; 2nd launch → `POST /api/focus` |
+
+Desktop notes:
+- The UI talks to its window over wry IPC: `shellSend({cmd: ...})` in index.html → `Desktop::on_ipc`. **Never name a
+  top-level JS binding `ipc`** (it collides with wry's `window.ipc`, and the whole script then fails to load).
+  Shell-mode JS errors are forwarded to `<data>/logs/app.log` (`ui [win]: ...`). `HWV_TRACE=1` logs HTTP requests.
+- See-through backgrounds only for **frameless** windows (WS_EX_NOREDIRECTIONBITMAP); title-bar windows are opaque.
+- The exe is GUI-subsystem: from PowerShell, pipe CLI output (`| Out-String`) or it returns before printing.
+- GUI tests: never screenshot the desktop. Use the spike's `--backdrop --backdrop-only` window as the background and
+  capture exactly the test windows' rectangle; ask the user before popping windows while they work.
 
 Watchdog stand-in test (never touches HWiNFO): set `HWV_DATA_DIR` to a scratch dir, write a config with
 `exe` = `C:\Windows\System32\PING.EXE`, `args` = `["-n","1000","127.0.0.1"]`, a scratch `ini`,

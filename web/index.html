@@ -135,7 +135,7 @@
 <body>
 <div id="wrap">
   <div id="top">
-    <nav id="nav" class="pywebview-drag-region"></nav>
+    <nav id="nav"></nav>
     <div id="panel"></div>
     <div id="banner"></div>
     <div id="editbar"></div>
@@ -149,6 +149,10 @@
   <option>Verdana</option><option>Calibri</option><option>Trebuchet MS</option><option>Courier New</option><option>Inter</option><option>Roboto</option></datalist>
 
 <script>
+// desktop app: forward script errors to <data>/logs/app.log (a frameless WebView has no visible console)
+if (window.__HWV) for (const ev of ["error", "unhandledrejection"]) addEventListener(ev, e => {
+  try { window.ipc.postMessage(JSON.stringify({ cmd: "log", msg: String(e.message || e.reason) + (e.lineno ? " @ line " + e.lineno : "") })); } catch (x) {}
+});
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const COLS = { cur: "Current", min: "Min", max: "Max", avg: "Avg" };
@@ -166,6 +170,17 @@ const SOLO = (() => { const s = new URLSearchParams(location.search).get("solo")
 let data = null, prefs = { ui: {}, theme: {} }, view = SOLO ? SOLO.view : "full", lastOk = false, panelOpen = false, env = null;
 let editing = false, seenRev = -1, layouts = { names: [], active: null }, armedDelete = false, readings = [];
 const openRows = new Set(), openGroups = new Set(["View"]);
+
+/* ---------- desktop shell bridge ---------- */
+// The desktop app (hwviewer.exe) injects window.__HWV and a wry IPC channel; in a plain browser both are absent.
+const SHELL = window.__HWV || null;
+const shellSend = m => { try { window.ipc.postMessage(JSON.stringify(m)); } catch (e) {} };
+let winTimer = null;
+function setWin(patch, quiet) {           // window options: apply locally now, tell the shell (debounced for sliders)
+  env.window = Object.assign({}, env.window, patch); applyTheme();
+  clearTimeout(winTimer); winTimer = setTimeout(() => shellSend({ cmd: "set_window", patch }), quiet ? 150 : 0);
+  if (!quiet) renderPanel();
+}
 
 /* ---------- helpers ---------- */
 async function post(path, body) {
@@ -198,6 +213,15 @@ function applyTheme() {
   for (const k of ["bg", "panel", "text", "accent", "warn", "crit"]) if (t[k]) c[k] = t[k];
   const r = document.documentElement.style;
   for (const k in c) r.setProperty("--" + k, c[k]);
+  // independent opacity: background (frameless desktop window only - a browser tab or a window with a title bar
+  // can't be see-through), boxes, text
+  const al = (k, d) => Math.max(0, Math.min(100, t[k] != null ? t[k] : d)) / 100;
+  const seeThrough = !!(SHELL && env && env.window && env.window.frameless);
+  const bgA = seeThrough ? al("bgAlpha", 100) : 1, boxA = al("boxAlpha", 100), txA = al("textAlpha", 100);
+  r.setProperty("--bg", hexA(c.bg, bgA));
+  for (const k of ["panel", "panel2", "line"]) r.setProperty("--" + k, hexA(c[k], boxA));
+  for (const k of ["text", "dim"]) r.setProperty("--" + k, hexA(c[k], txA));
+  r.opacity = SHELL && env && env.window && env.window.opacity != null ? env.window.opacity : "";  // whole-window master
   r.setProperty("--hover", hexA(c.accent, .14));
   r.setProperty("--font", (t.font ? `"${t.font}", ` : "") + '"Segoe UI", system-ui, sans-serif');
   r.setProperty("--fs", (t.size || 14) + "px");
@@ -209,7 +233,7 @@ function applyTheme() {
 
 /* ---------- nav ---------- */
 function detach(v, section) {
-  if (env) window.pywebview.api.detach(v, section || "");
+  if (env) shellSend({ cmd: "detach", view: v, section: section || "" });
   else window.open("/?solo=" + v + (section ? "/" + encodeURIComponent(section) : ""), "_blank", "popup,width=540,height=720");
 }
 function renderNav() {
@@ -217,7 +241,7 @@ function renderNav() {
   if (SOLO) {
     $("#nav").innerHTML = `<span class="ttl">${esc(SOLO.section ? SOLO.section : ((data && (data.views.find(v => v.id === SOLO.view) || {}).title) || (SOLO.view === "builder" ? "Builder" : SOLO.view)))}</span>` +
       `<span class="grow"></span><span id="stamp"></span><button class="ib" id="closeBtn" title="Close this window">✕</button>`;
-    $("#closeBtn").onclick = () => env ? window.pywebview.api.close_detached(SOLO.key) : window.close();
+    $("#closeBtn").onclick = () => env ? shellSend({ cmd: "close" }) : window.close();
     return;
   }
   const tabs = (data && data.views ? data.views.map(v => [v.id, v.title]) : [["full", "Full"], ["compact", "Compact"]]).concat([["builder", "Builder"]]);
@@ -228,7 +252,7 @@ function renderNav() {
     (frameless ? `<button class="ib" id="hideBtn" title="Hide to tray">✕</button>` : "");
   $("#gear").onclick = () => { panelOpen = !panelOpen; renderNav(); renderPanel(); };
   $("#detBtn").onclick = () => detach(view);
-  if ($("#hideBtn")) $("#hideBtn").onclick = () => window.pywebview.api.hide();
+  if ($("#hideBtn")) $("#hideBtn").onclick = () => shellSend({ cmd: "hide" });
 }
 
 /* ---------- settings panel ---------- */
@@ -274,13 +298,18 @@ function renderPanel() {
       .map(([k, n]) => `<label>${n} <input type="color" data-c="${k}" value="${t[k] || base[k]}"></label>`).join("")}</div>
     <div class="r"><b>Shape</b><label>Row padding <input type="range" id="tpad" min="0" max="10" value="${t.pad != null ? t.pad : 3}"></label>
       <label>Corners <input type="range" id="trad" min="0" max="18" value="${t.radius != null ? t.radius : 8}"></label>
-      ${chk("tbold", "Bold values", t.bold !== false)}${chk("tupper", "UPPERCASE section titles", t.upper !== false)}</div>`);
+      ${chk("tbold", "Bold values", t.bold !== false)}${chk("tupper", "UPPERCASE section titles", t.upper !== false)}</div>
+    <div class="r"><b>Opacity</b>${[["bgAlpha", "Background", 0], ["boxAlpha", "Boxes", 0], ["textAlpha", "Text", 20]]
+      .map(([k, n, mn]) => `<label>${n} <input type="range" data-a="${k}" min="${mn}" max="100" value="${t[k] != null ? t[k] : 100}"> <span data-av="${k}">${t[k] != null ? t[k] : 100}%</span></label>`).join("")}
+      ${SHELL && env && env.window && env.window.frameless ? "" : '<span class="hint">See-through background: desktop app with the title bar hidden (Window group).</span>'}</div>`);
   if (env) {
     h += group("Window", `
       <div class="r"><b>Frame</b>${chk("wfl", "Hide title bar (restarts)", W.frameless)}${chk("wtop", "Always on top", W.on_top)}${chk("wpin", "Pin to desktop (behind other windows)", W.pinned)}</div>
       <div class="r"><b>Behavior</b>${chk("wtray", "Close button minimizes to tray", W.close_to_tray !== false)}${chk("whid", "Start hidden in tray", W.start_hidden)}
         ${chk("wct", "Click-through (undo from tray menu)", W.click_through)}</div>
-      <div class="r"><b>Opacity</b><input type="range" id="wop" min="20" max="100" value="${Math.round((W.opacity != null ? W.opacity : 1) * 100)}"><span id="wopv">${Math.round((W.opacity != null ? W.opacity : 1) * 100)}%</span></div>
+      <div class="r"><b>Whole window</b><input type="range" id="wop" min="20" max="100" value="${Math.round((W.opacity != null ? W.opacity : 1) * 100)}"><span id="wopv">${Math.round((W.opacity != null ? W.opacity : 1) * 100)}%</span>
+        <span class="hint">Background / box / text opacity are under Look.</span></div>
+      <div class="r"><b>Browser</b><code>${esc(SHELL ? SHELL.url : location.origin + "/")}</code><button class="btn" id="wurl">Open</button><button class="btn" id="wcopy">Copy URL</button></div>
       <div class="r"><b>Size</b><input type="number" id="ww" value="${innerWidth}"> × <input type="number" id="wh" value="${innerHeight}"><button class="btn" id="wsz">Apply</button>
         <button class="btn danger" id="wquit">Quit</button></div>`);
   }
@@ -308,7 +337,8 @@ function renderPanel() {
     armedDelete = false; await post("/api/layout/delete", { name: layouts.active }); await refreshLayouts(); await tick(true); renderPanel();
   };
   // look
-  q("#tpre").onchange = e => { prefs.theme = { preset: e.target.value, font: t.font, size: t.size, pad: t.pad, radius: t.radius, bold: t.bold, upper: t.upper };
+  q("#tpre").onchange = e => { prefs.theme = { preset: e.target.value, font: t.font, size: t.size, pad: t.pad, radius: t.radius, bold: t.bold, upper: t.upper,
+      bgAlpha: t.bgAlpha, boxAlpha: t.boxAlpha, textAlpha: t.textAlpha };
     post("/api/settings", { theme: { preset: e.target.value } }).then(() => post("/api/settings", { theme: { bg: null, panel: null, text: null, accent: null, warn: null, crit: null } })); applyTheme(); renderPanel(); };
   q("#treset").onclick = async () => { await post("/api/settings/reset_key", { key: "theme" }); prefs.theme = {}; applyTheme(); renderTable(); renderPanel(); };
   q("#tfont").onchange = e => { savePrefs({ theme: { font: e.target.value.trim() } }); applyTheme(); };
@@ -318,13 +348,16 @@ function renderPanel() {
   q("#trad").oninput = e => { savePrefs({ theme: { radius: +e.target.value } }); applyTheme(); };
   q("#tbold").onchange = e => { savePrefs({ theme: { bold: e.target.checked } }); applyTheme(); };
   q("#tupper").onchange = e => { savePrefs({ theme: { upper: e.target.checked } }); applyTheme(); };
-  // window (widget only)
+  qa("[data-a]").forEach(i => i.oninput = () => { q(`[data-av="${i.dataset.a}"]`).textContent = i.value + "%"; savePrefs({ theme: { [i.dataset.a]: +i.value } }); applyTheme(); });
+  // window (desktop app only)
   if (env) {
-    const sw = (id, key) => { if (q(id)) q(id).onchange = async e => { env.window = await window.pywebview.api.set_window({ [key]: e.target.checked }); renderPanel(); }; };
+    const sw = (id, key) => { if (q(id)) q(id).onchange = e => setWin({ [key]: e.target.checked }); };
     sw("#wfl", "frameless"); sw("#wtop", "on_top"); sw("#wpin", "pinned"); sw("#wtray", "close_to_tray"); sw("#whid", "start_hidden"); sw("#wct", "click_through");
-    q("#wop").oninput = e => { q("#wopv").textContent = e.target.value + "%"; window.pywebview.api.set_window({ opacity: e.target.value / 100 }); };
-    q("#wsz").onclick = () => window.pywebview.api.resize(+q("#ww").value, +q("#wh").value);
-    q("#wquit").onclick = () => window.pywebview.api.quit();
+    q("#wop").oninput = e => { q("#wopv").textContent = e.target.value + "%"; setWin({ opacity: e.target.value / 100 }, true); };
+    q("#wsz").onclick = () => shellSend({ cmd: "resize", w: +q("#ww").value, h: +q("#wh").value });
+    q("#wquit").onclick = () => shellSend({ cmd: "quit" });
+    q("#wurl").onclick = () => shellSend({ cmd: "open_url" });
+    q("#wcopy").onclick = () => shellSend({ cmd: "copy_url" });
   }
 }
 function setView(patch) { savePrefs({ ui: { [view]: patch } }); renderTable(); renderPanel(); }
@@ -684,9 +717,9 @@ async function tick() {
     if (d.rev != null && d.rev !== seenRev && !saveTimer && !inflight) {   // settings changed elsewhere (another window / tray)
       seenRev = d.rev;
       prefs = Object.assign({ ui: {}, theme: {} }, await (await fetch("/api/settings")).json());
+      if (env && prefs.window) env.window = prefs.window;   // before applyTheme: it reads the window opacity
       applyTheme(); await refreshLayouts();
       if (!($("#panel").contains(document.activeElement))) renderPanel();
-      if (env) try { env.window = prefs.window; } catch (e) {}
     }
   } catch (e) {
     lastOk = false; banner.textContent = "Viewer server not reachable – is it still running?"; banner.style.display = "block";
@@ -699,6 +732,7 @@ async function tick() {
 }
 async function boot() {
   try { const s = await (await fetch("/api/settings")).json(); prefs = Object.assign({ ui: {}, theme: {} }, s); seenRev = s.rev; } catch (e) {}
+  if (SHELL) env = { window: prefs.window || {} };
   applyTheme(); await refreshLayouts();
   if (!SOLO && !location.hash && prefs.last_view) history.replaceState(null, "", "#" + prefs.last_view);
   await tick();
@@ -706,8 +740,9 @@ async function boot() {
   setInterval(tick, 1000);
 }
 addEventListener("hashchange", () => { if (!SOLO) enterView(); });
-addEventListener("pywebviewready", async () => {
-  try { env = await window.pywebview.api.get_env(); renderNav(); renderPanel(); } catch (e) {}
+// frameless desktop windows: drag by the nav bar's empty space (links/buttons keep working)
+$("#nav").addEventListener("mousedown", e => {
+  if (SHELL && e.button === 0 && !e.target.closest("a, button, input, select, label")) shellSend({ cmd: "drag" });
 });
 boot();
 </script>

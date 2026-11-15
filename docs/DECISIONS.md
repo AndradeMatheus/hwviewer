@@ -56,3 +56,26 @@ Measured on R1, with `serve` on live HWiNFO data polled at 2 Hz:
 
 The JSON payload shape and every route's status codes matched the Python server exactly (scratch parity script).
 Debug builds read `web/` from disk, so UI work needs no rebuild.
+
+### 9. Desktop shell: tao + wry + tray-icon, IPC for window commands (2026-11)
+The UI reaches its own window through wry IPC (`window.ipc.postMessage`) instead of HTTP routes: each WebView
+knows its window, and frameless dragging needs the low latency. The browser keeps using HTTP only. Whole-window
+opacity is CSS `opacity` on the page, not `WS_EX_LAYERED` alpha. Click-through still uses LAYERED + TRANSPARENT.
+`tray` mode creates no WebView until asked: 14.6 MB RAM, against ~300 MB with a window (WebView2 is the cost).
+Pinned: wry 0.57.1, tao 0.37.2, tray-icon 0.26.1, all at least 2 weeks old when chosen.
+
+### 10. Per-pixel transparency needs WS_EX_NOREDIRECTIONBITMAP, frameless only (2026-11)
+Measured with `examples/transparency_spike.rs` over an opaque striped backdrop window, capturing only that
+rectangle:
+
+| Setup | Result |
+|---|---|
+| tao/wry `transparent` alone | composites onto **white** |
+| + `DwmExtendFrameIntoClientArea(-1)` | no effect |
+| + transparent WebView2 background colour | no effect |
+| **`with_no_redirection_bitmap(true)`** | **real per-pixel alpha** (DirectComposition) |
+
+With a title bar the same style rendered unreliably (sometimes not at all), so see-through windows are frameless
+only. Background, box and text opacity are then plain CSS alphas (`theme.bgAlpha/boxAlpha/textAlpha`); the
+background alpha is applied only in a frameless desktop window. Separately, WebView2 start-up can drop
+`WS_EX_TOPMOST`, so the 1 s timer re-asserts "always on top".

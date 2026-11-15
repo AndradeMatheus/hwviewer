@@ -1,13 +1,22 @@
-//! HWiNFO viewer: reads HWiNFO64's shared memory and serves a local web UI.
+//! HWiNFO viewer: reads HWiNFO64's shared memory and shows it in a desktop window, the tray and a browser.
 //!
 //! ```text
-//! hwviewer serve [--open] [--mock] [--mock-outage 20] [--port 8765] [--host 0.0.0.0]
-//! hwviewer dump                       # every sensor/label HWiNFO exposes -> data/dump.txt
+//! hwviewer [app]        desktop window + tray icon + local URL (default)
+//! hwviewer tray         tray icon + local URL only; the window opens on demand (no WebView until then)
+//! hwviewer serve        browser only (no window, no tray)
+//! hwviewer dump         every sensor/label HWiNFO exposes -> <data>/dump.txt
+//! hwviewer watchdog …   restart HWiNFO before the free version's 12 h limit (run|install|uninstall|status|restart-now)
 //! ```
+// GUI subsystem: no console window flashes up; CLI use re-attaches to the parent terminal (see main()).
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 #[macro_use]
 mod log;
+#[cfg(windows)]
+mod desktop;
 mod paths;
+#[cfg(windows)]
+mod runtime;
 mod server;
 mod shm;
 mod storage;
@@ -16,14 +25,17 @@ mod views;
 mod watchdog;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use clap::{Args, Parser, Subcommand};
 
 use crate::shm::{DataSource, MockSource, SharedMemorySource};
 
+static HAS_CONSOLE: AtomicBool = AtomicBool::new(false);
+
 #[derive(Parser)]
-#[command(name = "hwviewer", version, about = "HWiNFO sensor viewer (web UI, desktop widget, watchdog, OSD)")]
+#[command(name = "hwviewer", version, about = "HWiNFO sensor viewer: desktop window, tray, browser UI, watchdog")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -31,9 +43,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Desktop window + tray icon + local URL (default)
+    #[cfg(windows)]
+    App(DeskArgs),
+    /// Tray icon + local URL only; the window opens on demand
+    #[cfg(windows)]
+    Tray(DeskArgs),
     /// Serve the web UI and JSON API (browser only, no window)
     Serve(ServeArgs),
-    /// Write every HWiNFO reading to data/dump.txt (to find patterns for views.json)
+    /// Write every HWiNFO reading to <data>/dump.txt (to find patterns for views.json)
     Dump(SourceArgs),
     /// Restart HWiNFO silently before the free version's 12 h shared-memory limit
     #[cfg(windows)]
@@ -54,26 +72,43 @@ struct SourceArgs {
 }
 
 #[derive(Args, Clone)]
-struct ServeArgs {
+struct DeskArgs {
     #[command(flatten)]
     src: SourceArgs,
+    /// Preferred port (the next free one up to +10 is used if it's taken)
     #[arg(long, default_value_t = 8765)]
     port: u16,
+    /// Serve the UI from this folder instead of the built-in copy
+    #[arg(long)]
+    web_dir: Option<PathBuf>,
+}
+
+impl Default for DeskArgs {
+    fn default() -> Self {
+        DeskArgs { src: SourceArgs::default(), port: 8765, web_dir: None }
+    }
+}
+
+#[derive(Args, Clone)]
+struct ServeArgs {
+    #[command(flatten)]
+    desk: DeskArgs,
     /// 0.0.0.0 lets other devices on your LAN view it (read-only from them)
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
     /// Open the browser
     #[arg(long)]
     open: bool,
-    /// Serve the UI from this folder instead of the built-in copy
-    #[arg(long)]
-    web_dir: Option<PathBuf>,
 }
 
-impl Default for ServeArgs {
-    fn default() -> Self {
-        ServeArgs { src: SourceArgs::default(), port: 8765, host: "127.0.0.1".into(), open: false, web_dir: None }
+/// Report a fatal error: stderr when there is a console, otherwise a message box. Exits.
+pub fn fatal(msg: &str) -> ! {
+    eprintln!("error: {msg}");
+    #[cfg(windows)]
+    if !HAS_CONSOLE.load(Ordering::SeqCst) {
+        desktop::win32::message_box("HWiNFO viewer", msg);
     }
+    std::process::exit(1)
 }
 
 fn source(a: &SourceArgs) -> Box<dyn DataSource> {
@@ -97,18 +132,55 @@ fn open_browser(url: &str) {
 
 fn serve(a: ServeArgs) -> Result<(), String> {
     let data = paths::data_dir();
-    let app = Arc::new(server::App::new(source(&a.src), config_path(&a.src)?, &data));
-    let (srv, port) = server::bind(&a.host, a.port, 10)?;
+    let app = Arc::new(server::App::new(source(&a.desk.src), config_path(&a.desk.src)?, &data));
+    let (srv, port) = server::bind(&a.host, a.desk.port, 10)?;
     let lan = a.host == "0.0.0.0";
     let url = format!("http://{}:{port}/", if lan { "127.0.0.1" } else { &a.host });
-    println!("HWiNFO viewer running at {url} (Ctrl+C to stop){}", if a.src.mock { "  [MOCK DATA]" } else { "" });
+    println!("HWiNFO viewer running at {url} (Ctrl+C to stop){}", if a.desk.src.mock { "  [MOCK DATA]" } else { "" });
     println!("data: {}", data.display());
     if a.open {
         open_browser(&url);
     }
-    let ctx = Arc::new(server::Ctx { port, lan, web: paths::Web::resolve(a.web_dir) });
+    let ctx = Arc::new(server::Ctx { port, lan, web: paths::Web::resolve(a.desk.web_dir), on_focus: None });
     server::run(Arc::new(srv), app, ctx, 4);
     Ok(())
+}
+
+#[cfg(windows)]
+fn desktop_mode(a: DeskArgs, tray_mode: bool) -> Result<(), String> {
+    use tao::event_loop::EventLoopBuilder;
+    let _instance = match runtime::acquire() {
+        Ok(h) => h,
+        Err(()) if runtime::focus_existing() => return Ok(()), // the running one came forward
+        Err(()) => return Err("HWiNFO viewer is already running (check the tray icon)".into()),
+    };
+    log::init("app");
+    let data = paths::data_dir();
+    let app = Arc::new(server::App::new(source(&a.src), config_path(&a.src)?, &data));
+    let (srv, port) = server::bind("127.0.0.1", a.port, 10)?;
+    let url = format!("http://127.0.0.1:{port}/");
+    runtime::publish(port, &url, if tray_mode { "tray" } else { "app" });
+    info!(
+        "HWiNFO viewer {} at {url} ({} mode, data {})",
+        env!("CARGO_PKG_VERSION"),
+        if tray_mode { "tray" } else { "app" },
+        data.display()
+    );
+
+    let event_loop = EventLoopBuilder::<desktop::Ev>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+    let focus = Mutex::new(proxy.clone());
+    let ctx = Arc::new(server::Ctx {
+        port,
+        lan: false,
+        web: paths::Web::resolve(a.web_dir),
+        on_focus: Some(Arc::new(move || {
+            let _ = server::lock(&focus).send_event(desktop::Ev::Focus);
+        })),
+    });
+    let (srv, app2) = (Arc::new(srv), app.clone());
+    std::thread::spawn(move || server::run(srv, app2, ctx, 4));
+    desktop::Desktop::new(app, url, proxy, tray_mode).run(event_loop)
 }
 
 fn dump(a: SourceArgs) -> Result<(), String> {
@@ -124,16 +196,28 @@ fn dump(a: SourceArgs) -> Result<(), String> {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    #[cfg(windows)]
+    HAS_CONSOLE.store(desktop::win32::attach_parent_console(), Ordering::SeqCst);
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) if !HAS_CONSOLE.load(Ordering::SeqCst) && e.use_stderr() => fatal(&e.to_string()),
+        Err(e) => e.exit(),
+    };
     let r = match cli.cmd {
-        None => serve(ServeArgs::default()),
+        #[cfg(windows)]
+        None => desktop_mode(DeskArgs::default(), false),
+        #[cfg(not(windows))]
+        None => serve(ServeArgs { desk: DeskArgs::default(), host: "127.0.0.1".into(), open: false }),
+        #[cfg(windows)]
+        Some(Cmd::App(a)) => desktop_mode(a, false),
+        #[cfg(windows)]
+        Some(Cmd::Tray(a)) => desktop_mode(a, true),
         Some(Cmd::Serve(a)) => serve(a),
         Some(Cmd::Dump(a)) => dump(a),
         #[cfg(windows)]
         Some(Cmd::Watchdog(a)) => watchdog::cli(a),
     };
     if let Err(e) = r {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+        fatal(&e);
     }
 }

@@ -384,10 +384,14 @@ impl App {
 }
 
 // --------------------------------------------------------------------------- HTTP
+pub type Hook = Arc<dyn Fn() + Send + Sync>;
+
 pub struct Ctx {
     pub port: u16,
     pub lan: bool,
     pub web: Web,
+    /// Desktop modes: bring the main window forward (POST /api/focus from a second launch).
+    pub on_focus: Option<Hook>,
 }
 
 struct Reply {
@@ -515,7 +519,16 @@ fn get(app: &App, ctx: &Ctx, path: &str, query: &str) -> Reply {
     }
 }
 
-fn post(app: &App, path: &str, query: &str, req: &mut Request) -> Result<Reply, String> {
+fn post(app: &App, ctx: &Ctx, path: &str, query: &str, req: &mut Request) -> Result<Reply, String> {
+    if path == "/api/focus" {
+        return Ok(match &ctx.on_focus {
+            Some(f) => {
+                f();
+                reply_json(200, &json!({"ok": true}))
+            }
+            None => err(404, "no window in this mode"),
+        });
+    }
     if path == "/api/image" {
         let name = query_param(query, "name").unwrap_or_default();
         let blob = body(req, MAX_IMAGE)?;
@@ -583,10 +596,13 @@ fn handle(app: &App, ctx: &Ctx, mut req: Request) {
     let url = req.url().to_string();
     let (path, query) = url.split_once('?').unwrap_or((&url, ""));
     let is_post = *req.method() == Method::Post;
+    if std::env::var_os("HWV_TRACE").is_some() {
+        info!("{} {url} host={:?}", req.method(), header(&req, "Host"));
+    }
     let reply = if let Some(r) = guard(&req, ctx, is_post) {
         r
     } else if is_post {
-        post(app, path, query, &mut req).unwrap_or_else(|e| err(400, &e))
+        post(app, ctx, path, query, &mut req).unwrap_or_else(|e| err(400, &e))
     } else if *req.method() == Method::Get {
         get(app, ctx, path, query)
     } else {
