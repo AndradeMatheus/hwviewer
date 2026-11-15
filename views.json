@@ -126,45 +126,45 @@
   },
   "gpu_temp": {
    "name": "GPU Temperature",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Temperature$",
    "warn": 75,
    "crit": 85
   },
   "gpu_mem": {
    "name": "GPU Memory Junction",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Memory Junction Temperature$",
    "warn": 90,
    "crit": 100
   },
   "gpu_hot": {
    "name": "GPU Hot Spot",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Hot Spot Temperature$",
    "warn": 80,
    "crit": 90
   },
   "gpu_vcore": {
    "name": "GPU Core Voltage",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Core Voltage$"
   },
   "gpu_fan1": {
    "name": "GPU Fan 1",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Fan1$",
    "unit": "RPM"
   },
   "gpu_fan2": {
    "name": "GPU Fan 2",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Fan2$",
    "unit": "RPM"
   },
   "gpu_clock": {
    "name": "GPU Clock",
-   "sensor": "^GPU \\[#0\\]",
+   "sensor": "^d?GPU \\[#0\\]",
    "label": "^GPU Clock$"
   }
  },
