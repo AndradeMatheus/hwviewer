@@ -1,8 +1,8 @@
 # HWiNFO Viewer
 
 A small, fast sensor dashboard for [HWiNFO64](https://www.hwinfo.com/): a desktop window you can make see-through,
-a tray icon, and the same view in any browser on your PC (or, read-only, on your phone).
-One ~4 MB Windows exe, written in Rust.
+a tray icon, an in-game overlay with FPS, and the same view in any browser on your PC (or, read-only, on your phone).
+One ~4 MB Windows exe, written in Rust. Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 - **Installer** (`HWiNFO-Viewer-Setup-x.y.z.exe` from Releases): installs to Program Files, can start with Windows,

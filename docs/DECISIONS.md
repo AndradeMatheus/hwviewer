@@ -94,6 +94,11 @@ background alpha is applied only in a frameless desktop window. Separately, WebV
 - **CI**: windows-latest, fmt/clippy/test. Tags build and publish with `gh release`, so no third-party
   release action is needed.
 
+### 12. Python implementation removed (2026-11)
+Done once the installer had moved the live watchdog task to `C:\Program Files\HWiNFO Viewer\hwviewer.exe`
+(verified: monitoring, no pythonw left). Entries #1–#7 describe the Python era; their reasoning carries over to
+the Rust modules of the same names. Git history before `R4` has the Python code.
+
 ### 13. In-game OSD: RTSS + native overlay engines, FPS from RTSS or PresentMon (2026-11)
 We never inject into games: hooking DirectX/Vulkan ourselves would mean anti-cheat risk and a lot of code.
 - **RTSS engine:** we write colour-tagged text into one OSD slot of `RTSSSharedMemoryV2`, claimed by owner name
@@ -114,8 +119,4 @@ We never inject into games: hooking DirectX/Vulkan ourselves would mean anti-che
 - **UI preview:** drawn from the lines the engine actually rendered (`/api/osd/status`), so it can't drift from
   the real overlay.
 - **Testing without the screen:** `HWV_OSD_DUMP=<file.bmp>` writes native frames to disk instead of showing them.
-
-### 12. Python implementation removed (2026-11)
-Done once the installer had moved the live watchdog task to `C:\Program Files\HWiNFO Viewer\hwviewer.exe`
-(verified: monitoring, no pythonw left). Entries #1–#7 describe the Python era; their reasoning carries over to
-the Rust modules of the same names. Git history before `R4` has the Python code.
+- **Sizes for 0.4.0:** exe 4.2 MB, installer 3.42 MB, portable zip 2.06 MB (PresentMon included).

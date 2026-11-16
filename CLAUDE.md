@@ -30,6 +30,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # dist\: portable
 - The exe is GUI-subsystem: from PowerShell, pipe CLI output (`| Out-String`) or it returns before printing.
 - Commit messages: write them to a file and `git commit -F` (PowerShell 5.1 mangles embedded quotes).
   Keep `main` pushed after each milestone. Bump the version only in `Cargo.toml`.
+- Releasing: bump `Cargo.toml`, add a `## x.y.z` section to `CHANGELOG.md` (it becomes the Release notes), push,
+  then tag `vx.y.z` and push the tag; CI builds the installer + zip and publishes the Release.
 
 ## Layout
 | Path | What |
