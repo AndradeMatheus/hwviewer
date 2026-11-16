@@ -47,6 +47,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\HWViewer\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+; FPS fallback for the in-game OSD (run by the elevated watchdog when RTSS isn't running). MIT, Intel.
+Source: "..\dist\HWViewer\tools\PresentMon.exe"; DestDir: "{app}\tools"; Flags: ignoreversion
+Source: "..\dist\HWViewer\tools\PresentMon-LICENSE.txt"; DestDir: "{app}\tools"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"

@@ -7,8 +7,8 @@ version's 12 h shared-memory limit. Owner: single developer. Target machine: Win
 Installed copy: `C:\Program Files\HWiNFO Viewer\` (data in `%LOCALAPPDATA%\HWiNFO Viewer`); its watchdog task
 **is live** and manages the user's real HWiNFO.
 
-Roadmap: R0–R4 done (Rust port, watchdog, desktop/tray, opacity, installer + wizard, CI). **R5: in-game OSD + FPS**
-(plan: `~/.claude/plans/great-now-we-need-lovely-metcalfe.md`).
+Roadmap: R0–R5 done (Rust port, watchdog, desktop/tray, opacity, installer + wizard, CI, in-game OSD + FPS).
+Plan history: `~/.claude/plans/great-now-we-need-lovely-metcalfe.md`.
 
 ## Commands
 ```
@@ -40,7 +40,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # dist\: portable
 | `src/storage.rs` | `atomic_write`, `Settings` (rev, deep-merge), `Profiles`, images |
 | `src/server.rs` | `App` (snapshot cache, reconnect grace, layouts), tiny_http routes, guards |
 | `src/desktop/` | tao loop + wry windows + tray (`mod.rs`), Win32 tweaks (`win32.rs`), icon (`icon.rs`) |
-| `src/watchdog/` | loop + CLI + task install (`mod.rs`), Win32 processes (`process.rs`), HWiNFO64.INI (`ini.rs`) |
+| `src/watchdog/` | loop + CLI + task install (`mod.rs`), Win32 processes (`process.rs`), HWiNFO64.INI (`ini.rs`), PresentMon FPS helper over UDP (`fps_helper.rs`) |
+| `src/osd/` | in-game OSD controller (`mod.rs`), `settings.osd` + payload→lines (`model.rs`, pure), RTSS slot writer + FPS reader (`rtss.rs`), native Direct2D layered overlay + hotkey (`overlay.rs`), FPS source chain (`fps.rs`) |
 | `src/runtime.rs` · `src/system.rs` · `src/autostart.rs` · `src/log.rs` · `src/paths.rs` | single instance + runtime.json · `GET /api/system` (wizard) · HKCU Run · rotating logs · every path |
 | `web/index.html` | the whole UI (vanilla JS/CSS, no build step), embedded in release builds |
 | `defaults/views.json` | factory catalog (embedded); the editable copy is `<data>/views.json` |
@@ -71,6 +72,10 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # dist\: portable
 ## Testing without disturbing the user
 - **UI pages:** render with headless Edge, never the real desktop:
   `msedge --headless=new --disable-gpu --user-data-dir=<scratch> --virtual-time-budget=4000 --window-size=760,520 --screenshot=<png> http://127.0.0.1:<port>/#setup`.
+- **OSD (native engine):** `HWV_OSD_DUMP=<scratch>\frame.bmp` + `tray --mock` with a scratch `settings.json`
+  (`osd.enabled`, `engine: "native"`) writes frames to the file instead of the screen; check `/api/osd/status`.
+  RTSS and PresentMon can't be tested live without starting RTSS / the elevated watchdog: ask the user.
+  `packaging/presentmon.lock` pins PresentMon (version + SHA-256); build.ps1 verifies it.
 - **Native windows:** use the spike's `--backdrop --backdrop-only` window as the background and capture only that
   exact rectangle. Ask before popping windows while the user is working.
 - **Watchdog:** use a stand-in. `HWV_DATA_DIR` = scratch; config `exe` = `C:\Windows\System32\PING.EXE`,

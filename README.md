@@ -36,6 +36,11 @@ The URL (default `http://127.0.0.1:8765/`, next free port if taken) is in the tr
 - **Gear › Look**: presets, fonts, colors, and **opacity for background, boxes and text separately**. A see-through
   background needs the title bar hidden (gear › Window).
 - **Gear › Window** (desktop app): hide title bar, always on top, pin to desktop, click-through, whole-window opacity.
+- **OSD tab — in-game overlay**: pick sensors (+ FPS / frame time), position, font, colours and separate
+  background/box/text opacity; toggle with **Ctrl+Shift+O** (configurable) or the tray. Engines:
+  *RTSS* (if RivaTuner Statistics Server is running — draws inside games, also exclusive fullscreen) or the
+  *native* overlay (no extra software; windowed/borderless games). *Auto* picks RTSS when available.
+  FPS comes from RTSS, or from PresentMon via the watchdog when RTSS isn't running. Nothing is injected into games.
 - **⧉** detaches a view or section into its own window. Detached windows come back on the next start.
 - **Tray icon**: show/hide, open in browser, copy URL, window options, opacity, quit. If click-through locks you
   out of the window, turn it off here.

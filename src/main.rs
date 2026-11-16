@@ -16,6 +16,8 @@ mod log;
 mod autostart;
 #[cfg(windows)]
 mod desktop;
+#[cfg(windows)]
+mod osd;
 mod paths;
 #[cfg(windows)]
 mod runtime;

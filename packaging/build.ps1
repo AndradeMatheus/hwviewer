@@ -19,11 +19,28 @@ try {
     New-Item -ItemType Directory -Force $stage | Out-Null
     Copy-Item target\release\hwviewer.exe, README.md $stage
 
+    # PresentMon (FPS fallback), pinned by version + SHA-256 in presentmon.lock; cached in target\presentmon
+    $lock = Get-Content packaging\presentmon.lock -Raw | ConvertFrom-Json
+    $cache = Join-Path $root "target\presentmon\$($lock.version)"
+    New-Item -ItemType Directory -Force $cache | Out-Null
+    $pm = Join-Path $cache "PresentMon.exe"
+    $ua = @{ "User-Agent" = "hwviewer-build" }
+    if (-not (Test-Path $pm) -or (Get-FileHash $pm -Algorithm SHA256).Hash -ne $lock.sha256) {
+        Invoke-WebRequest -UseBasicParsing -Headers $ua $lock.url -OutFile $pm
+    }
+    $hash = (Get-FileHash $pm -Algorithm SHA256).Hash
+    if ($hash -ne $lock.sha256) { Remove-Item $pm; throw "PresentMon hash mismatch: got $hash, lock says $($lock.sha256)" }
+    $lic = Join-Path $cache "PresentMon-LICENSE.txt"
+    if (-not (Test-Path $lic)) { Invoke-WebRequest -UseBasicParsing -Headers $ua $lock.license_url -OutFile $lic }
+    New-Item -ItemType Directory -Force (Join-Path $stage "tools") | Out-Null
+    Copy-Item $pm, $lic (Join-Path $stage "tools")
+    Write-Host "PresentMon $($lock.version) verified"
+
     # portable: portable.txt next to the exe keeps all data in .\data (no installer, no registry)
     $port = Join-Path $dist "portable"
     Remove-Item -Recurse -Force $port -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $port | Out-Null
-    Copy-Item "$stage\*" $port
+    Copy-Item -Recurse "$stage\*" $port
     Set-Content -Path (Join-Path $port "portable.txt") -Encoding ascii -Value "Data is stored in the data folder next to hwviewer.exe."
     $zip = Join-Path $dist "HWiNFO-Viewer-$version-portable.zip"
     Remove-Item $zip -ErrorAction SilentlyContinue

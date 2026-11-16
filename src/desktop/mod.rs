@@ -54,6 +54,7 @@ struct Win {
 struct Tray {
     _icon: TrayIcon,
     show: MenuItem,
+    osd: CheckMenuItem,
     open: MenuItem,
     copy: MenuItem,
     quit: MenuItem,
@@ -353,9 +354,11 @@ impl Desktop {
         let op_items: Vec<&dyn IsMenuItem> = opacity.iter().map(|(_, i)| i as &dyn IsMenuItem).collect();
         let sub = Submenu::with_items("Opacity", true, &op_items).map_err(|e| e.to_string())?;
         let quit = MenuItem::new("Quit", true, None);
+        let osd_cfg = crate::osd::model::OsdCfg::from_settings(&lock(&self.app.settings).data["osd"]);
+        let osd = CheckMenuItem::new(format!("In-game OSD   ({})", osd_cfg.hotkey), true, osd_cfg.enabled, None);
         let (s1, s2, s3) =
             (PredefinedMenuItem::separator(), PredefinedMenuItem::separator(), PredefinedMenuItem::separator());
-        let mut items: Vec<&dyn IsMenuItem> = vec![&show, &s1, &open, &copy, &s2];
+        let mut items: Vec<&dyn IsMenuItem> = vec![&show, &osd, &s1, &open, &copy, &s2];
         items.extend(flags.iter().map(|(_, i)| i as &dyn IsMenuItem));
         items.extend([&sub as &dyn IsMenuItem, &s3, &quit]);
         let menu = Menu::with_items(&items).map_err(|e| e.to_string())?;
@@ -367,12 +370,13 @@ impl Desktop {
             .with_icon(ico)
             .build()
             .map_err(|e| e.to_string())?;
-        Ok(Tray { _icon: icon, show, open, copy, quit, flags, opacity })
+        Ok(Tray { _icon: icon, show, osd, open, copy, quit, flags, opacity })
     }
 
     fn sync_tray(&self) {
         let Some(t) = &self.tray else { return };
         let o = self.opts();
+        t.osd.set_checked(lock(&self.app.settings).data["osd"]["enabled"].as_bool().unwrap_or(false));
         for (k, item) in &t.flags {
             item.set_checked(Self::flag(&o, k));
         }
@@ -392,6 +396,12 @@ impl Desktop {
             let _ = win32::copy_text(&self.url);
         } else if id == t.quit.id() {
             self.quit(cf);
+        } else if id == t.osd.id() {
+            let on = lock(&self.app.settings).data["osd"]["enabled"].as_bool().unwrap_or(false);
+            if let Err(e) = lock(&self.app.settings).patch(&json!({"osd": {"enabled": !on}})) {
+                warn!("could not toggle the OSD: {e}");
+            }
+            self.sync_tray();
         } else if let Some((k, _)) = t.flags.iter().find(|(_, i)| i.id() == id) {
             let k = *k;
             let cur = Self::flag(&self.opts(), k);
@@ -430,6 +440,7 @@ impl Desktop {
         }
         if now >= self.next_pin {
             self.next_pin = now + PIN_EVERY;
+            self.sync_tray(); // e.g. the OSD hotkey toggled `osd.enabled` from another thread
             let o = self.opts();
             let fg = win32::foreground();
             for w in self.wins.values() {
@@ -457,11 +468,13 @@ impl Desktop {
 
     fn quit(&mut self, cf: &mut ControlFlow) {
         self.flush_geo();
+        crate::osd::shutdown(); // releases our RTSS slot, or RTSS would keep drawing the last frame
         self.tray = None; // removes the tray icon now rather than at process exit
         *cf = ControlFlow::Exit;
     }
 
     fn start(&mut self, target: &EventLoopWindowTarget<Ev>) {
+        crate::osd::start(self.app.clone());
         match self.make_tray() {
             Ok(t) => self.tray = Some(t),
             Err(e) => warn!("tray icon unavailable: {e}"),
@@ -527,7 +540,10 @@ impl Desktop {
                     Ev::TrayLeftClick => self.toggle_main(target),
                     Ev::Focus => self.show_main(target),
                 },
-                Event::LoopDestroyed => self.flush_geo(),
+                Event::LoopDestroyed => {
+                    self.flush_geo();
+                    crate::osd::shutdown();
+                }
                 _ => {}
             }
         })

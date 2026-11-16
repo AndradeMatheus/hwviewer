@@ -1,0 +1,7 @@
+{
+  "_comment": "PresentMon console app shipped as tools\\PresentMon.exe (FPS fallback when RTSS isn't running; run by the elevated watchdog). MIT licence, Intel. Bump: new version + url + sha256 (Get-FileHash), and check the CSV still has MsBetweenPresents with --v1_metrics.",
+  "version": "2.6.0",
+  "url": "https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe",
+  "sha256": "B2A706BC6AD475749E3B7E3409263AA1E6906D45BDCF993F6DBC0F660188F1AF",
+  "license_url": "https://raw.githubusercontent.com/GameTechDev/PresentMon/v2.6.0/LICENSE.txt"
+}

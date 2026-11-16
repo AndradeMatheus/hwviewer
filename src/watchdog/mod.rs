@@ -7,6 +7,7 @@
 //! Status goes to `<data>/watchdog_status.json` (the viewer shows it), logs to `<data>/logs/watchdog.log`.
 //! HWiNFO runs elevated, so silent kill/relaunch needs an elevated watchdog: `install` registers a logon task.
 
+pub mod fps_helper;
 pub mod ini;
 pub mod process;
 
@@ -43,8 +44,17 @@ pub fn defaults() -> Value {
         "keep_running": true,
         "kill_timeout_s": 10,
         "ready_timeout_s": 90,
-        "settle_s": 1.0
+        "settle_s": 1.0,
+        "presentmon_exe": ""          // empty = tools\PresentMon.exe next to hwviewer.exe (shipped by the installer)
     })
+}
+
+/// PresentMon for the FPS helper: watchdog.json `presentmon_exe`, else `tools\PresentMon.exe` beside our exe.
+fn presentmon_path(cfg: &Value) -> PathBuf {
+    match cfg["presentmon_exe"].as_str().filter(|s| !s.is_empty()) {
+        Some(p) => PathBuf::from(p),
+        None => crate::paths::exe_dir().unwrap_or_default().join("tools").join("PresentMon.exe"),
+    }
 }
 
 pub fn config_path() -> PathBuf {
@@ -317,6 +327,9 @@ impl Watchdog {
                 "not elevated: killing/starting HWiNFO will fail or show UAC prompts - use `hwviewer watchdog install`"
             );
         }
+        // FPS for the OSD when RTSS isn't running (PresentMon needs the admin rights this process has)
+        let port = fps_helper::spawn(presentmon_path(&self.cfg));
+        self.publish(&[("fps_port", json!(port))]);
         let mut backoff = 0.0_f64;
         while !self.stop.load(Ordering::SeqCst) {
             // a panic in one check must not end the watchdog

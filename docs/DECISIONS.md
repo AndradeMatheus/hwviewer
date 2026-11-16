@@ -94,6 +94,27 @@ background alpha is applied only in a frameless desktop window. Separately, WebV
 - **CI**: windows-latest, fmt/clippy/test. Tags build and publish with `gh release`, so no third-party
   release action is needed.
 
+### 13. In-game OSD: RTSS + native overlay engines, FPS from RTSS or PresentMon (2026-11)
+We never inject into games: hooking DirectX/Vulkan ourselves would mean anti-cheat risk and a lot of code.
+- **RTSS engine:** we write colour-tagged text into one OSD slot of `RTSSSharedMemoryV2`, claimed by owner name
+  ("HWiNFO Viewer", never slot 0), honouring the v2.14+ busy bit. RTSS draws it inside the game, also in
+  exclusive fullscreen. Layout comes from the local SDK header. The slot is released on quit; otherwise RTSS
+  would keep drawing our last frame.
+- **Native engine:** a WS_EX_LAYERED|TRANSPARENT|TOPMOST|TOOLWINDOW|NOACTIVATE window, drawn with Direct2D +
+  DirectWrite (grayscale AA) into a premultiplied DIB, pushed with UpdateLayeredWindow. That gives per-pixel
+  alpha for background, row boxes and text with no WebView. It covers windowed and borderless games only.
+- **`auto`:** RTSS when it's running, else native.
+- **FPS:**
+  - RTSS app entries (`dwFrames/(dwTime1-dwTime0)`, `dwFrameTime` µs) for the foreground window's process.
+  - Otherwise the watchdog's PresentMon helper. ETW needs admin, and the watchdog is the elevated process. The
+    app sends `{"want": pid}` over 127.0.0.1 UDP and gets `{pid, fps, frametime_ms}` back. Using UDP avoids
+    shared-memory ACLs across integrity levels. PresentMon is stopped 5 s after the last request.
+  - PresentMon 2.6.0 (Intel, MIT) is pinned by SHA-256 in `packaging/presentmon.lock` and shipped as
+    `tools\PresentMon.exe`.
+- **UI preview:** drawn from the lines the engine actually rendered (`/api/osd/status`), so it can't drift from
+  the real overlay.
+- **Testing without the screen:** `HWV_OSD_DUMP=<file.bmp>` writes native frames to disk instead of showing them.
+
 ### 12. Python implementation removed (2026-11)
 Done once the installer had moved the live watchdog task to `C:\Program Files\HWiNFO Viewer\hwviewer.exe`
 (verified: monitoring, no pythonw left). Entries #1–#7 describe the Python era; their reasoning carries over to

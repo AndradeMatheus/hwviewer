@@ -138,6 +138,15 @@
   .wbody .st { margin: 6px 0; } .wbody .good { color: #4caf50; } .wbody .bad { color: var(--warn); }
   .wbody code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
   .wnav { display: flex; gap: 8px; align-items: center; margin-top: 14px; } .wnav .grow { flex: 1; }
+  /* OSD tab */
+  .osd { max-width: 820px; font-size: 13px; } .osd .r { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 5px 0; }
+  .osd .r > b { min-width: 76px; } .osd h3 { margin: 0 0 6px; } #osdStatus { margin: 4px 0 10px; }
+  .osd .items { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; margin: 4px 0; }
+  .osd .items input[type=text] { width: 120px; } .osd .items .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #osdPrev { display: inline-flex; gap: 2px 18px; padding: 8px 10px; border-radius: 6px; margin-top: 6px; line-height: 1.35;
+    background-image: repeating-linear-gradient(45deg, #2b3a2a 0 14px, #3a2b2b 14px 28px); }
+  #osdPrev .row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 3px; border-radius: 3px; }
+  #osdPrev .v { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -252,7 +261,7 @@ function renderNav() {
     $("#closeBtn").onclick = () => env ? shellSend({ cmd: "close" }) : window.close();
     return;
   }
-  const tabs = (data && data.views ? data.views.map(v => [v.id, v.title]) : [["full", "Full"], ["compact", "Compact"]]).concat([["builder", "Builder"]]);
+  const tabs = (data && data.views ? data.views.map(v => [v.id, v.title]) : [["full", "Full"], ["compact", "Compact"]]).concat([["builder", "Builder"], ["osd", "OSD"]]);
   $("#nav").innerHTML = tabs.map(([id, t]) => `<a href="#${id}" class="${id === view ? "on" : ""}">${esc(t)}</a>`).join("") +
     `<span class="grow"></span><span id="stamp"></span>` +
     `<button class="ib" id="detBtn" title="Open this view in its own window">⧉</button>` +
@@ -752,12 +761,90 @@ function renderSetup() {
   if (q("#wzLan")) q("#wzLan").onchange = e => { savePrefs({ lan: e.target.checked }); renderSetup(); };
 }
 
+/* ---------- in-game OSD (#osd): settings.osd; the engine itself runs in the desktop app (src/osd) ---------- */
+const OSDDEF = { enabled: false, engine: "auto", hotkey: "Ctrl+Shift+O", interval_ms: 1000, items: ["cpu_tctl", "gpu_temp", "gpu_hot"],
+  show_fps: true, show_frametime: false, layout: "vertical", anchor: "top-left", x: 16, y: 16, font: "Segoe UI", size: 15,
+  bgAlpha: 45, boxAlpha: 0, textAlpha: 100, bg: "#000000", label_color: "#b0b6c0", value_color: "#ffffff" };
+let osdSt = null;
+const osdCfg = () => Object.assign({}, OSDDEF, prefs.osd || {});
+const osdItems = c => (c.items || []).map(i => typeof i === "string" ? { id: i } : i).filter(i => i && i.id);
+function setOsd(patch, rerender) { savePrefs({ osd: patch }); if (rerender) renderOsd(); else osdPreview(); }
+async function osdRefresh() {
+  try { osdSt = await (await fetch("/api/osd/status")).json(); } catch (e) { osdSt = null; }
+  if (view === "osd") { osdStatus(); osdPreview(); }
+}
+function osdStatus() {
+  const el = $("#osdStatus"); if (!el) return;
+  const s = osdSt, c = osdCfg();
+  if (!s || !s.available) { el.innerHTML = `<span class="hint">The OSD runs in the desktop app (window or tray mode). Settings made here apply there.</span>`; return; }
+  const eng = { rtss: "✔ RTSS: drawn inside games, also exclusive fullscreen", native: "✔ Native overlay: windowed and borderless games",
+    none: "✖ RTSS selected but not running: start RivaTuner Statistics Server, or pick Auto", off: `Off. Press ${esc(c.hotkey)} or tick Enabled` }[s.active] || esc(s.active);
+  const fps = !(c.show_fps || c.show_frametime) ? "" : s.fps_source === "RTSS" ? " · FPS from RTSS" : s.fps_source === "PresentMon" ? " · FPS from PresentMon (watchdog)"
+    : s.enabled ? " · <span class=\"warn\">no FPS for the app in front: start RTSS, or install the watchdog (it brings PresentMon)</span>" : "";
+  el.innerHTML = `<b>${eng}</b>${fps}${s.rtss_running ? " · RTSS running" : ""}`;
+}
+function osdPreview() {
+  const el = $("#osdPrev"); if (!el) return;
+  const c = osdCfg(), a = (v, d) => (v != null ? v : d) / 100;
+  const lines = osdSt && osdSt.lines && osdSt.lines.length ? osdSt.lines : [{ label: "FPS", value: "144", color: c.value_color }];
+  Object.assign(el.style, { fontFamily: `"${c.font}", var(--font)`, fontSize: c.size + "px",
+    flexDirection: c.layout === "horizontal" ? "row" : "column", backgroundColor: hexA(c.bg, a(c.bgAlpha, 45)) });
+  el.innerHTML = lines.map(l => `<div class="row" style="background:${hexA(c.bg, a(c.boxAlpha, 0))}"><span style="color:${hexA(c.label_color, a(c.textAlpha, 100))}">${esc(l.label)}</span>` +
+    `<span class="v" style="color:${hexA(/^#[0-9a-f]{6}$/i.test(l.color) ? l.color : "#ffffff", a(c.textAlpha, 100))}">${esc(l.value)}</span></div>`).join("");
+}
+function renderOsd() {
+  $("#colhead").innerHTML = ""; $("#editbar").innerHTML = "";
+  const c = osdCfg(), items = osdItems(c), sensors = (data && data.sensors) || [];
+  const name = id => (sensors.find(s => s.id === id) || {}).name || id;
+  const rng = (k, mn, mx, v) => `<input type="range" data-ok="${k}" min="${mn}" max="${mx}" value="${v}"> <span data-ov="${k}">${v}${k === "size" ? "px" : "%"}</span>`;
+  const col = (k, n) => `<label>${n} <input type="color" data-oc="${k}" value="${esc(c[k])}"></label>`;
+  $("#main").innerHTML = `<div class="wiz osd"><h3>In-game OSD</h3><div id="osdStatus" class="hint">…</div>
+    <div class="r"><b>Show</b><label><input type="checkbox" id="oEn" ${c.enabled ? "checked" : ""}> Enabled</label>
+      <label>Hotkey <input type="text" id="oHk" value="${esc(c.hotkey)}" size="14"></label>
+      <label>Update every <select id="oInt">${[[500, "0.5 s"], [1000, "1 s"], [2000, "2 s"]].map(([v, t]) => `<option value="${v}" ${+c.interval_ms === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
+    <div class="r"><b>Engine</b>${seg("oEng", [["auto", "Auto"], ["rtss", "RTSS"], ["native", "Native"]], c.engine)}
+      <span class="hint">Auto uses RTSS when it's running (works in exclusive fullscreen), else the native overlay (windowed/borderless).</span></div>
+    <div class="r"><b>FPS</b><label><input type="checkbox" id="oFps" ${c.show_fps ? "checked" : ""}> Frame rate</label>
+      <label><input type="checkbox" id="oFt" ${c.show_frametime ? "checked" : ""}> Frame time</label></div>
+    <div class="r"><b>Sensors</b><div style="flex:1;min-width:280px"><div class="items">${items.map((it, i) => `<span class="nm" title="${esc(it.id)}">${esc(name(it.id))}</span>
+        <span><input type="text" data-ol="${i}" placeholder="label" value="${esc(it.label || "")}"><button class="rm" data-mv="${i},-1" title="Up">↑</button><button class="rm" data-mv="${i},1" title="Down">↓</button><button class="rm" data-rm="${i}" title="Remove">✕</button></span>`).join("")
+        || '<span class="hint">No sensors yet.</span><span></span>'}</div>
+      <select id="oAdd"><option value="">Add a sensor…</option>${sensors.filter(s => !items.some(i => i.id === s.id)).map(s => `<option value="${esc(s.id)}">${esc(s.section + " › " + s.name)}</option>`).join("")}</select></div></div>
+    <div class="r"><b>Position</b>${seg("oAnc", [["top-left", "↖"], ["top-right", "↗"], ["bottom-left", "↙"], ["bottom-right", "↘"]], c.anchor)}
+      <label>X <input type="number" id="oX" value="${+c.x}" style="width:56px"></label><label>Y <input type="number" id="oY" value="${+c.y}" style="width:56px"></label>
+      ${seg("oLay", [["vertical", "Stacked"], ["horizontal", "One row"]], c.layout)}</div>
+    <div class="r"><b>Style</b><label>Font <input type="text" id="oFont" list="fonts" value="${esc(c.font)}" size="12"></label><label>Size ${rng("size", 9, 40, c.size)}</label></div>
+    <div class="r"><b>Colors</b>${col("bg", "Background")}${col("label_color", "Labels")}${col("value_color", "Values")}<span class="hint">warn/critical colours follow the sensor thresholds</span></div>
+    <div class="r"><b>Opacity</b><label>Background ${rng("bgAlpha", 0, 100, c.bgAlpha)}</label><label>Boxes ${rng("boxAlpha", 0, 100, c.boxAlpha)}</label><label>Text ${rng("textAlpha", 20, 100, c.textAlpha)}</label></div>
+    <div class="r"><b>Preview</b><div id="osdPrev"></div></div></div>`;
+  const q = s => $("#main").querySelector(s), qa = s => $("#main").querySelectorAll(s);
+  q("#oEn").onchange = e => setOsd({ enabled: e.target.checked });
+  q("#oHk").onchange = e => setOsd({ hotkey: e.target.value.trim() || OSDDEF.hotkey });
+  q("#oInt").onchange = e => setOsd({ interval_ms: +e.target.value });
+  q("#oFps").onchange = e => setOsd({ show_fps: e.target.checked });
+  q("#oFt").onchange = e => setOsd({ show_frametime: e.target.checked });
+  for (const [g, k] of [["oEng", "engine"], ["oAnc", "anchor"], ["oLay", "layout"]])
+    qa(`[data-seg="${g}"] button`).forEach(b => b.onclick = () => setOsd({ [k]: b.dataset.v }, true));
+  q("#oX").onchange = e => setOsd({ x: +e.target.value || 0 }); q("#oY").onchange = e => setOsd({ y: +e.target.value || 0 });
+  q("#oFont").onchange = e => setOsd({ font: e.target.value.trim() || OSDDEF.font });
+  qa("[data-ok]").forEach(i => i.oninput = () => { q(`[data-ov="${i.dataset.ok}"]`).textContent = i.value + (i.dataset.ok === "size" ? "px" : "%"); setOsd({ [i.dataset.ok]: +i.value }); });
+  qa("[data-oc]").forEach(i => i.oninput = () => setOsd({ [i.dataset.oc]: i.value }));
+  const setItems = list => setOsd({ items: list }, true);
+  q("#oAdd").onchange = e => { if (e.target.value) setItems(items.concat({ id: e.target.value })); };
+  qa("[data-rm]").forEach(b => b.onclick = () => setItems(items.filter((_, i) => i !== +b.dataset.rm)));
+  qa("[data-mv]").forEach(b => b.onclick = () => { const [i, d] = b.dataset.mv.split(",").map(Number), j = i + d; if (j < 0 || j >= items.length) return;
+    const l = items.slice(); [l[i], l[j]] = [l[j], l[i]]; setItems(l); });
+  qa("[data-ol]").forEach(t => t.onchange = () => { const l = items.slice(); l[+t.dataset.ol] = Object.assign({}, l[+t.dataset.ol], { label: t.value.trim() }); setItems(l); });
+  osdStatus(); osdPreview(); osdRefresh();
+}
+
 /* ---------- main loop ---------- */
 async function enterView() {
   if (!SOLO) { view = location.hash.slice(1) || "full"; if (view !== "setup") savePrefs({ last_view: view }); }
   renderNav(); renderPanel(); renderEditBar();
   if (view === "builder") await builderInit();
   else if (view === "setup") { renderSetup(); setupRefresh(); }
+  else if (view === "osd") renderOsd();
   else renderTable();
   tickStamp();
 }
@@ -797,6 +884,7 @@ async function tick() {
   if (SOLO && data) { const t = $("#nav .ttl"); if (!t || !t.textContent.trim()) renderNav(); }
   if (view === "builder") { builderTick(); if (data && !B.firstData) { B.firstData = true; renderInspector(); } }
   else if (view === "setup") { if (++WZ.n % 3 === 0 && !WZ.pending) setupRefresh(); }   // live status every 3 s
+  else if (view === "osd") osdRefresh();   // live status + preview; inputs aren't re-rendered (keeps focus)
   else if (data) renderTable();
   tickStamp();
 }

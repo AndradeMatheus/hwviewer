@@ -495,6 +495,8 @@ fn get(app: &App, ctx: &Ctx, path: &str, query: &str) -> Reply {
         "/api/readings" => reply_json(200, &app.readings()),
         #[cfg(windows)]
         "/api/system" => reply_json(200, &crate::system::info(ctx.mode, ctx.port, ctx.lan)),
+        #[cfg(windows)]
+        "/api/osd/status" => reply_json(200, &lock(&crate::osd::status_handle()).clone()),
         "/api/profile" => match app.profiles.load(&query_param(query, "name").unwrap_or_default()) {
             Some(v) => reply_json(200, &v),
             None => err(404, "not found"),

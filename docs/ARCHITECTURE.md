@@ -50,6 +50,18 @@
 - A 1 s timer flushes the debounced geometry, keeps pinned windows at desktop level and re-asserts topmost.
 - The tray menu and IPC both end up in `set_opts()`. A title-bar change recreates the windows in place.
 
+## In-game OSD
+```
+osd controller thread (app/tray modes) ── every interval_ms, re-reading settings.osd every 100 ms
+  App::snapshot() + FpsSource::sample() → model::build_lines()
+    ├─ RTSS running and engine ≠ native → rtss::write_osd(slot "HWiNFO Viewer")   (drawn inside the game)
+    └─ else (engine ≠ rtss)             → overlay thread: Direct2D → UpdateLayeredWindow (click-through window)
+  status (incl. rendered lines) → GET /api/osd/status → OSD tab preview
+FpsSource: RTSS app entry for the foreground pid → else UDP {"want":pid} → watchdog fps_helper → PresentMon (ETW)
+```
+The overlay thread owns the global hotkey, which toggles `osd.enabled` in settings, so the tray and UI follow.
+Quitting releases the RTSS slot.
+
 ## Persistence and packaging
 - **Writes:** all go through `storage::atomic_write` (temp + fsync + rename with retries). Corrupt JSON is kept as
   `*.bad`. `Settings.rev` increments on each change; windows compare it to pick up changes made elsewhere.
